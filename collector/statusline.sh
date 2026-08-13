@@ -27,18 +27,30 @@ CONF="${BURNWATCH_CONF:-$HOME/.burnwatch/env}"
 : "${BURNWATCH_URL:=http://127.0.0.1:8787}"
 : "${BURNWATCH_TOKEN:=}"
 
+# A trailing slash would make every POST hit //ingest and 404 forever, silently.
+BURNWATCH_URL="${BURNWATCH_URL%/}"
+
 HOST=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo unknown)
+STATUS="${TMPDIR:-/tmp}/burnwatch-status"
 
 # Fire-and-forget in a detached subshell. The status line renders on every
 # keystroke-ish event, so it must never block on the network — a slow or dead
 # daemon has to cost zero milliseconds here.
+#
+# The background job leaves its outcome in $STATUS, because otherwise this
+# collector has no failure signal whatsoever: misconfigure it and it reports
+# nothing, forever, while printing a perfectly healthy status line.
 (
-  printf '%s' "$INPUT" | curl -sS -m 2 \
-    -X POST "$BURNWATCH_URL/ingest" \
-    -H 'content-type: application/json' \
-    -H "authorization: Bearer $BURNWATCH_TOKEN" \
-    -H "x-burnwatch-host: $HOST" \
-    --data-binary @- >/dev/null 2>&1 &
+  {
+    printf '%s' "$INPUT" | curl -sS -m 2 \
+      -X POST "$BURNWATCH_URL/ingest" \
+      -H 'content-type: application/json' \
+      -H "authorization: Bearer $BURNWATCH_TOKEN" \
+      -H "x-burnwatch-host: $HOST" \
+      --data-binary @- >/dev/null 2>&1
+    printf '%s exit=%s url=%s/ingest\n' \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$?" "$BURNWATCH_URL" > "$STATUS"
+  } &
 ) >/dev/null 2>&1
 
 # Everything below is only the terminal display; the daemon already has its copy.

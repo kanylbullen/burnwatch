@@ -119,6 +119,114 @@ test("an exhausted window reports as already run out", () => {
   expect(s.early_by_s).toBe(5 * H);
 });
 
+test("a window past its reset is not served as a live reading", () => {
+  // The 5-hour window expires nightly while nobody is coding. It used to keep
+  // publishing the dead window's percentage with resets_in_s clamped to 0.
+  const s = computeWindow(
+    [
+      { ts: NOW - 3 * H, pct: 41, resets_at: NOW - 1 * H },
+      { ts: NOW - 90 * 60, pct: 41, resets_at: NOW - 1 * H },
+    ],
+    opts,
+  );
+  expect(s).toBeNull();
+});
+
+test("an expired window cannot manufacture MAXED OUT at a middling percentage", () => {
+  // With resets_in_s clamped to zero the required pace divided by nothing,
+  // giving verdict=runs_out and early_by_s=0, which the widget prints as
+  // "MAXED OUT" beside a reset time already in the past.
+  const s = computeWindow(ramp(30, 42, 2, NOW - 60), opts);
+  expect(s).toBeNull();
+});
+
+test("a lagging machine's old window does not resurrect it", () => {
+  const live = NOW + 47 * H;
+  const dead = NOW - 10 * H;
+  const s = computeWindow(
+    [
+      { ts: NOW - 2 * H, pct: 38, resets_at: live },
+      { ts: NOW - 1 * H, pct: 40, resets_at: live },
+      // Arrives newest, but names a window that ended hours ago.
+      { ts: NOW - 60, pct: 95, resets_at: dead },
+    ],
+    opts,
+  )!;
+
+  expect(s.resets_at).toBe(live);
+  expect(s.pct).toBe(40);
+  expect(s.samples).toBe(2);
+});
+
+test("a lagging reading inside the window cannot drag the percentage backwards", () => {
+  const resetsAt = NOW + 47 * H;
+  const s = computeWindow(
+    [
+      { ts: NOW - 2 * H, pct: 30, resets_at: resetsAt },
+      { ts: NOW - 1 * H, pct: 50, resets_at: resetsAt },
+      { ts: NOW - 30 * 60, pct: 45, resets_at: resetsAt }, // stale peer
+    ],
+    opts,
+  )!;
+
+  expect(s.pct).toBe(50);
+  // 20 points across the 2h observed span, not 15 as the dip would imply.
+  expect(s.rate_pct_per_h).toBeCloseTo(10, 3);
+});
+
+test("a sparse series is dated by its real anchor, not by the lookback edge", () => {
+  const resetsAt = NOW + 47 * H;
+  const s = computeWindow(
+    [
+      { ts: NOW - 40 * H, pct: 10, resets_at: resetsAt },
+      { ts: NOW - 5 * 60, pct: 30, resets_at: resetsAt },
+    ],
+    opts,
+  )!;
+
+  // 20 points across the 40h that actually elapsed. Dating the anchor at the
+  // 24h lookback edge instead would report 0.83 %/h — 1.7x too fast.
+  expect(s.rate_pct_per_h).toBeCloseTo(20 / 40, 3);
+});
+
+test("a window seconds old does not produce an unbounded rate", () => {
+  const s = computeWindow(
+    [
+      { ts: NOW - 60, pct: 0, resets_at: NOW + 5 * H },
+      { ts: NOW - 10, pct: 5, resets_at: NOW + 5 * H },
+    ],
+    { ...opts, lookbackS: 1 * H },
+  )!;
+
+  // 5 points in 50 seconds is 360 %/h, which would forecast an instant run-out.
+  expect(s.rate_pct_per_h).toBe(0);
+  expect(s.verdict).toBe("speed_up");
+});
+
+test("used_today is null when the series does not reach back to midnight", () => {
+  // NOW is 10:00 in Stockholm, so midnight is NOW-10h. This weekly window
+  // opened days ago and the only reading is two hours old, so how much of it
+  // was spent today is simply unknown.
+  const s = computeWindow(
+    [{ ts: NOW - 2 * H, pct: 56, resets_at: NOW + 47 * H }],
+    opts,
+  )!;
+
+  expect(s.used_today_pct).toBeNull();
+});
+
+test("used_today is the whole reading when the window opened after midnight", () => {
+  // A 5-hour window resetting in 1h opened at NOW-4h, which is after local
+  // midnight — so everything in it was necessarily spent today.
+  const s = computeWindow(ramp(0, 12, 3, NOW + 1 * H), {
+    ...opts,
+    lookbackS: 1 * H,
+    windowLengthS: 5 * H,
+  })!;
+
+  expect(s.used_today_pct).toBeCloseTo(12, 3);
+});
+
 test("local midnight respects the configured zone, not the server's UTC clock", () => {
   // 2025-08-13T08:00:00Z is 10:00 in Stockholm (CEST, UTC+2).
   const t = Date.UTC(2025, 7, 13, 8, 0, 0) / 1000;

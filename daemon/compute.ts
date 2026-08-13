@@ -51,11 +51,34 @@ export type WindowState = {
 
 const H = 3600;
 
-/** Percentage at time `at`, from the last sample at or before it. */
-function pctAt(samples: Sample[], at: number): number | null {
-  let found: number | null = null;
+/**
+ * Shortest span that can support a rate. Two readings seconds apart at the
+ * start of a window would otherwise divide a real delta by almost nothing and
+ * forecast an immediate run-out.
+ */
+const MIN_SPAN_S = 300;
+
+/**
+ * Forces the series to climb, by carrying a running maximum forward.
+ *
+ * Usage inside a window only ever increases, but readings arrive from many
+ * machines and a lagging one reports a percentage from minutes ago. Taken at
+ * face value that dip drags the current reading backwards, halves the measured
+ * burn and can cancel a run-out warning.
+ */
+function monotonic(samples: Sample[]): Sample[] {
+  let high = -Infinity;
+  return samples.map((s) => {
+    high = Math.max(high, s.pct);
+    return high === s.pct ? s : { ...s, pct: high };
+  });
+}
+
+/** Newest sample at or before `at`. Assumes the series is already monotonic. */
+function sampleAt(samples: Sample[], at: number): Sample | null {
+  let found: Sample | null = null;
   for (const s of samples) {
-    if (s.ts <= at) found = s.pct;
+    if (s.ts <= at) found = s;
     else break;
   }
   return found;
@@ -72,23 +95,24 @@ function pctAt(samples: Sample[], at: number): number | null {
  * whatever span is actually observed. Anchoring instead at the window's 0%
  * start would average a recent burst over days of history and forecast far
  * too slow a burn.
+ *
+ * The anchor is dated by when its reading was actually taken, never by the
+ * start of the lookback. With sparse samples the newest reading at-or-before
+ * that boundary can be hours older than the boundary itself, and pretending
+ * otherwise divides a delta accumulated over that whole stretch by the
+ * lookback alone — inflating the pace and inventing run-out warnings.
  */
 function burnRate(samples: Sample[], now: number, lookbackS: number): number {
   if (samples.length === 0) return 0;
   const latest = samples[samples.length - 1];
 
-  const from = now - lookbackS;
-  let basePct = pctAt(samples, from);
-  let baseTs = from;
-  if (basePct === null) {
-    basePct = samples[0].pct;
-    baseTs = samples[0].ts;
-  }
+  const anchor = sampleAt(samples, now - lookbackS) ?? samples[0];
+  const elapsed = now - anchor.ts;
+  if (elapsed < MIN_SPAN_S) return 0;
 
-  const elapsed = now - baseTs;
-  if (elapsed <= 0) return 0;
-  const delta = latest.pct - basePct;
-  // Negative deltas mean a rollover slipped into the slice; treat as no signal.
+  const delta = latest.pct - anchor.pct;
+  // The series is monotonic by construction, so this cannot go negative — but
+  // stay defensive rather than emit a negative rate if that ever changes.
   if (delta < 0) return 0;
   return (delta / elapsed) * H;
 }
@@ -131,15 +155,29 @@ export function computeWindow(
 ): WindowState | null {
   if (all.length === 0) return null;
 
-  const sorted = [...all].sort((a, b) => a.ts - b.ts);
-  const latest = sorted[sorted.length - 1];
-
-  // Keep only the current window. `resets_at` is the window's identity.
-  const samples = sorted.filter((s) => s.resets_at === latest.resets_at);
-  const windowStart = latest.resets_at - opts.windowLengthS;
-
   const { now, lookbackS } = opts;
-  const resetsInS = Math.max(0, latest.resets_at - now);
+  const sorted = [...all].sort((a, b) => a.ts - b.ts);
+
+  // The current window is the one reaching furthest into the future, not the
+  // one named by the newest sample: a lagging machine can deliver an old
+  // window's `resets_at` with a fresh timestamp, and taking that at face value
+  // would resurrect a dead window and discard the real history.
+  const currentResetsAt = Math.max(...sorted.map((s) => s.resets_at));
+
+  // Past its reset the window no longer exists, and no reading has arrived for
+  // its successor. Publishing the old percentage here is what made the widget
+  // show a stale figure with "0M TO RESET" all night, and — once the required
+  // pace divided by a zero remainder — announce MAXED OUT at any percentage.
+  // Having no reading is the truth, and the clients already render it.
+  if (currentResetsAt <= now) return null;
+
+  const samples = monotonic(
+    sorted.filter((s) => s.resets_at === currentResetsAt),
+  );
+  const latest = samples[samples.length - 1];
+  const windowStart = currentResetsAt - opts.windowLengthS;
+
+  const resetsInS = currentResetsAt - now;
   const remainingPct = Math.max(0, 100 - latest.pct);
 
   const rate = burnRate(samples, now, lookbackS);
@@ -175,12 +213,22 @@ export function computeWindow(
     verdict = "on_pace";
   }
 
-  // Today's accrual, clamped to the window so a rollover cannot read negative.
+  // Today's accrual.
+  //
+  // The old code read a missing sample at midnight as "the window stood at 0%",
+  // which is only true when the window opened today. Whenever the series simply
+  // did not reach that far back — a fresh install, a restart, a gap — it
+  // reported the entire window total as today's, and the widget claimed
+  // "+60% USED TODAY" for something closer to 4%.
   const midnight = localMidnight(now, opts.timeZone);
-  let usedToday: number | null = null;
-  if (midnight >= windowStart) {
-    const atMidnight = pctAt(samples, midnight) ?? 0;
-    usedToday = Math.max(0, latest.pct - atMidnight);
+  let usedToday: number | null;
+  if (windowStart >= midnight) {
+    // The window opened after midnight, so everything in it was spent today.
+    usedToday = latest.pct;
+  } else {
+    const atMidnight = sampleAt(samples, midnight);
+    usedToday =
+      atMidnight === null ? null : Math.max(0, latest.pct - atMidnight.pct);
   }
 
   return {

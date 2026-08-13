@@ -54,6 +54,21 @@ function clockAt(epoch, tz) {
   return `${day.toUpperCase()} ${time}`;
 }
 
+/** "UTC+2" for the daemon's configured zone, at the current instant. */
+function utcOffset(timeZone) {
+  try {
+    const name = new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      timeZoneName: "shortOffset",
+    })
+      .formatToParts(new Date())
+      .find((p) => p.type === "timeZoneName")?.value;
+    return (name ?? "UTC").replace("GMT", "UTC");
+  } catch {
+    return "UTC";
+  }
+}
+
 /**
  * Headline and sub-line for a forecast.
  *
@@ -116,9 +131,13 @@ function paintWindow(prefix, w, tz) {
   set(`${prefix}.pct`, pct(w.pct));
   set(`${prefix}.reset`, dur(w.resets_in_s));
 
-  if (w.used_today_pct != null) {
-    set(`${prefix}.today`, `+${Math.round(w.used_today_pct)}%`);
-  }
+  // An explicit em dash, not a skipped update: leaving the previous number in
+  // place makes the card contradict itself for a whole day after a reset, when
+  // the daemon rightly says it cannot know today's share yet.
+  set(
+    `${prefix}.today`,
+    w.used_today_pct == null ? "—" : `+${Math.round(w.used_today_pct)}%`,
+  );
   set(`${prefix}.rate`, `${w.rate_pct_per_h.toFixed(1)}%`);
 
   if (bar) bar.style.width = `${Math.min(100, Math.max(0, w.pct))}%`;
@@ -149,7 +168,10 @@ function paint(state) {
     contact == null ? "NEVER" : contact < 60 ? "LIVE" : `${dur(contact)} AGO`,
   );
   set("samples", week ? String(week.samples) : "0");
-  set("tz", tz.split("/").pop().replace(/_/g, " "));
+  // The offset rather than the city: it fits at widget sizes where a name like
+  // "Stockholm" gets ellipsised, and it is what you actually need in order to
+  // read the wall-clock times on the forecast card.
+  set("tz", utcOffset(tz));
 
   const hosts = el("hosts");
   if (hosts) {

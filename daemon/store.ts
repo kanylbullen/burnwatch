@@ -85,7 +85,19 @@ export class Store {
     return true;
   }
 
+  private lastPrune = 0;
+
+  /**
+   * Drops samples past the retention horizon.
+   *
+   * Rate-limited to once an hour: this runs from the ingest path, where every
+   * status-line render on every machine arrives, and two unindexed DELETE scans
+   * over the whole table on each of those serialised the daemon for no benefit.
+   * Nothing expires urgently enough to need finer granularity.
+   */
   prune(now: number): void {
+    if (now - this.lastPrune < 3600) return;
+    this.lastPrune = now;
     this.db.run("DELETE FROM samples WHERE ts < ?1", [now - config.retentionS]);
     this.db.run("DELETE FROM heartbeats WHERE ts < ?1", [
       now - config.retentionS,

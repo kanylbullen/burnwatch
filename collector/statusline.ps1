@@ -3,7 +3,13 @@
 # Install by adding to %USERPROFILE%\.claude\settings.json:
 #   "statusLine": {
 #     "type": "command",
-#     "command": "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\path\\to\\statusline.ps1"
+#     "command": "powershell -NoProfile -ExecutionPolicy Bypass -File C:/path/to/statusline.ps1"
+#
+# Forward slashes are deliberate. Claude Code runs this through bash on Windows,
+# where a backslash escapes the next character, so C:\path\to\x.ps1 reaches
+# PowerShell as C:pathtox.ps1 - which does not exist. PowerShell exits 127 and
+# the error is swallowed, so the status line never appears and nothing is ever
+# reported, with nothing anywhere to say why.
 #   }
 #
 # Configure with BURNWATCH_URL and BURNWATCH_TOKEN user environment variables,

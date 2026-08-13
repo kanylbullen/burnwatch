@@ -1,9 +1,43 @@
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 const H = 3600;
 const num = (v: string | undefined, d: number) =>
   v === undefined || v.trim() === "" || Number.isNaN(Number(v)) ? d : Number(v);
+
+/**
+ * Loads ~/.burnwatch/env into the environment.
+ *
+ * The systemd unit passes this file via EnvironmentFile, but nothing else did:
+ * starting the daemon by hand — `bun run dev`, a login shell, any other
+ * supervisor — silently ignored every setting in it, including the token. That
+ * bound 0.0.0.0 with authentication disabled while the file sat there holding
+ * a token, which is the opposite of what the file's presence implies.
+ *
+ * Anything already exported wins, so systemd and one-off overrides still lead.
+ */
+function loadEnvFile(): void {
+  const path =
+    process.env.BURNWATCH_CONF ?? join(homedir(), ".burnwatch", "env");
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return; // Absent is normal: the file is optional.
+  }
+
+  for (const line of text.split("\n")) {
+    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (!m) continue;
+    const [, key, rawValue] = m;
+    if (process.env[key] !== undefined) continue;
+    const value = rawValue.trim().replace(/^(['"])(.*)\1$/, "$2");
+    process.env[key] = value;
+  }
+}
+
+loadEnvFile();
 
 export const config = {
   port: num(process.env.BURNWATCH_PORT, 8787),

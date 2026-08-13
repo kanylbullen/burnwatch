@@ -76,6 +76,10 @@ body {
 
 .card {
   flex: 0 0 100%;
+  /* Without this a flex item may not shrink below its min-content width. One
+     long unbreakable value — a time-zone name — would then push the whole card
+     wider than the shell and slide its right edge out of view. */
+  min-width: 0;
   height: 100%;
   padding: calc(var(--u) * 7) calc(var(--u) * 7) calc(var(--u) * 9);
   display: flex;
@@ -206,10 +210,15 @@ body {
   text-align: right;
 }
 
+/* Must be allowed to shrink. A long value such as a time-zone name otherwise
+   pushes the right-hand stat clean off the edge of the card. */
 .stat b {
   font-size: calc(var(--u) * 8);
   line-height: 1;
   font-stretch: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .stat small {
@@ -275,13 +284,23 @@ b.accent {
 
 /* ---------- status card ---------- */
 
+/* Scrolls rather than clips: this list is capped only by how many machines you
+   code on, and silently hiding everything past the seventh is worse than a
+   scrollbar on a list nobody reads often. */
 .hosts {
   list-style: none;
   margin-top: calc(var(--u) * 3);
   display: flex;
   flex-direction: column;
   gap: calc(var(--u) * 1.6);
-  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.hosts::-webkit-scrollbar {
+  display: none;
 }
 
 .hosts li {

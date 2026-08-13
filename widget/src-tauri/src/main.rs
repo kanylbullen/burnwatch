@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{
-    Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder,
+    WindowEvent,
 };
 
 const WINDOW_LABEL: &str = "widget";
@@ -93,10 +94,9 @@ fn main() {
                 serde_json::json!({ "url": settings.url, "token": settings.token })
             );
 
-            let mut builder =
+            let window =
                 WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::default())
                     .title("burnwatch")
-                    .inner_size(settings.width as f64, settings.height as f64)
                     .min_inner_size(180.0, 180.0)
                     .resizable(true)
                     .decorations(false)
@@ -105,13 +105,18 @@ fn main() {
                     .skip_taskbar(true)
                     .shadow(false)
                     .visible(false)
-                    .initialization_script(&boot);
+                    .initialization_script(&boot)
+                    .build()?;
 
+            // Geometry is applied in physical pixels because that is how it was
+            // measured on the way out. The builder's inner_size/position take
+            // logical pixels, so on any scaled display the saved physical value
+            // was re-read as logical and multiplied by the scale factor again —
+            // the window grew, and walked further off-screen, on every launch.
+            window.set_size(PhysicalSize::new(settings.width, settings.height))?;
             if let (Some(x), Some(y)) = (settings.x, settings.y) {
-                builder = builder.position(x as f64, y as f64);
+                window.set_position(PhysicalPosition::new(x, y))?;
             }
-
-            let window = builder.build()?;
             window.show()?;
 
             let pin = CheckMenuItem::with_id(
