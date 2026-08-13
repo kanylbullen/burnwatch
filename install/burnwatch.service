@@ -12,6 +12,10 @@ EnvironmentFile=%h/.burnwatch/env
 ExecStart=%h/.bun/bin/bun run %h/burnwatch/daemon/server.ts
 Restart=always
 RestartSec=3
+# Without a start limit a unit whose ExecStart is wrong — an unwritten path, a
+# missing bun — respawns forever, looking enabled while never serving anything.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 # The daemon reads nothing but its own database and answers HTTP; give it no
 # more of the filesystem than that.

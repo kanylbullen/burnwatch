@@ -4,14 +4,14 @@
 5-hour allowance is gone, how fast you are burning it, and whether you run dry
 before the reset.**
 
-Claude Code tells you your usage percentage if you go looking for it. burnwatch
-puts it on your desktop and, more usefully, turns it into a *rate*: at the pace
-of the last day, do you finish the week with allowance to spare, or does it run
-out on Thursday morning?
+Claude Code will tell you your usage percentage if you go looking for it.
+burnwatch puts it on your desktop and, more usefully, turns it into a *rate*:
+at the pace of the last day, do you finish the week with allowance to spare, or
+does it run out on Thursday morning?
 
-> Built after seeing someone put the same idea on an ESP32-S3. The daemon
-> speaks plain JSON over HTTP, so the desktop widget here and a future firmware
-> are just two clients of one feed.
+> Built after seeing someone put the same idea on an ESP32-S3. It runs on
+> Cloudflare Workers and speaks plain JSON, so the desktop widget here and a
+> future firmware are just two clients of one feed.
 
 <p align="center">
   <img src="docs/screen-weekly.png" width="240" alt="Weekly allowance: 23% used, +23% today, 1D 22H to reset">
@@ -24,11 +24,11 @@ out on Thursday morning?
 ## How it works
 
 ```
-  Claude Code (any machine)          one daemon                  clients
+  Claude Code (any machine)         Cloudflare                  clients
   ┌──────────────────────┐         ┌──────────────┐        ┌─────────────────┐
-  │ statusLine collector ├─POST───▶│  burnwatch   │◀─GET───┤ desktop widget  │
-  │  every machine you   │ /ingest │  SQLite +    │ /api/  │ browser         │
-  │  code on             │         │  forecast    │ state  │ ESP32-S3 (todo) │
+  │ statusLine collector ├─POST───▶│  Worker + D1 │◀─GET───┤ desktop widget  │
+  │  every machine you   │ /ingest │  forecast    │ /api/  │ browser         │
+  │  code on             │         │  + widget    │ state  │ ESP32-S3 (todo) │
   └──────────────────────┘         └──────────────┘        └─────────────────┘
 ```
 
@@ -50,12 +50,11 @@ Three things follow from using that as the source:
 - **The numbers are account-wide.** One reading already covers every machine on
   the account, phones included. Parsing local transcript files would only ever
   see the usage produced on the machine doing the parsing.
-- **You need one daemon, not one per machine.** Any host running the collector
-  reports the same account totals.
+- **You need one endpoint, not one per machine.** Any machine running the
+  collector reports the same account totals.
 
 The block is absent before a session's first API response, and for accounts
-without a Claude subscription. The collector handles both by forwarding
-whatever it was handed.
+without a Claude subscription. The collector forwards whatever it was handed.
 
 ## Burn rate and forecast
 
@@ -76,49 +75,58 @@ what it would take to finish exactly at the reset. Worked example: 23% used
 with 47h left and +5%/day observed gives a required `77/47 = 1.64 %/h` against
 an observed `5/24 = 0.21 %/h` — so **7.9×**.
 
-## Requirements
+**burnwatch would rather say nothing than say something it cannot support.** A
+window reads `null` between its own reset and the first reading of the window
+that replaces it, and `used_today_pct` is `null` when the stored series does not
+reach back to local midnight. Both used to be filled in with a stale or invented
+number, which is a worse failure for a monitor than a blank.
 
-- [Bun](https://bun.sh) on the machine running the daemon.
-- A Claude subscription — the `rate_limits` block is not sent otherwise.
-- For the desktop widget: Rust, and WebView2 (preinstalled on Windows 11).
-- `jq` on Linux/macOS machines, for the status-line text only. Reporting works
-  without it.
+## Deploy
 
-## 1. Daemon (once, on one machine)
-
-```bash
-git clone https://github.com/kanylbullen/burnwatch ~/burnwatch
-cd ~/burnwatch
-./install/setup.sh server
-```
-
-This generates a token, writes `~/.burnwatch/env`, installs a systemd user
-unit, and prints the URL and token the other machines need.
-
-If the box has no reachable user D-Bus — common over plain SSH — the script
-says so and starts the daemon detached instead. Enable the unit later from a
-login shell with `systemctl --user enable --now burnwatch`.
-
-The daemon binds `0.0.0.0` by default. If only this machine will report, set
-`BURNWATCH_HOST=127.0.0.1` and skip the firewall entirely. Otherwise open the
-port to your LAN only:
+You need a Cloudflare account. The free tier covers this comfortably — a busy
+day of collecting is a few thousand requests against a limit of 100,000.
 
 ```bash
-sudo ufw allow from 192.168.0.0/16 to any port 8787 proto tcp
+git clone https://github.com/kanylbullen/burnwatch
+cd burnwatch
+bun install          # or npm install
+
+npx wrangler d1 create burnwatch
 ```
 
-## 2. Collector (on every machine you code on)
+Paste the printed `database_id` into `wrangler.jsonc`, then:
+
+```bash
+npx wrangler d1 migrations apply burnwatch --remote
+npx wrangler secret put BURNWATCH_TOKEN      # paste a long random string
+npx wrangler deploy
+```
+
+Generate the token with something like `openssl rand -base64 24`. Keep it: every
+collector needs it.
+
+The Worker **refuses every request** while `BURNWATCH_TOKEN` is unset, rather
+than treating an empty token as "authentication disabled". A half-finished
+deploy has to fail closed on a public endpoint.
+
+Deploying prints a `*.workers.dev` URL. To use your own hostname, add a route in
+the Cloudflare dashboard or a `routes` entry in `wrangler.jsonc`.
+
+## Collectors
 
 The collector prints a normal status line — `Opus 5 · myproject · 5h 41% ·
-7d 24%` — and reports in the background. It never waits on the network:
-measured at ~15 ms even when pointed at an unroutable address.
+7d 24%` — and reports in the background.
+
+Both collectors require **curl**. It ships with Windows 10+ and with most Linux
+distributions. On Linux and macOS, `jq` is used only to format the status-line
+text; reporting works without it.
 
 ### Linux / macOS
 
 ```bash
 git clone https://github.com/kanylbullen/burnwatch ~/burnwatch
 mkdir -p ~/.burnwatch && chmod 700 ~/.burnwatch
-printf 'BURNWATCH_URL=http://DAEMON:8787\nBURNWATCH_TOKEN=YOUR_TOKEN\n' > ~/.burnwatch/env
+printf 'BURNWATCH_URL=https://burnwatch.example.workers.dev\nBURNWATCH_TOKEN=YOUR_TOKEN\n' > ~/.burnwatch/env
 chmod 600 ~/.burnwatch/env
 chmod +x ~/burnwatch/collector/statusline.sh
 ```
@@ -132,10 +140,14 @@ Then add to `~/.claude/settings.json`:
 }
 ```
 
+The POST is detached, so the render never waits on the network: measured at
+~15 ms even when pointed at an unroutable address.
+
 ### Windows
 
-Copy `collector/burnwatch.env.example` to `collector/burnwatch.env` and fill in
-the URL and token, then add to `%USERPROFILE%\.claude\settings.json`:
+Copy `collector/burnwatch.env.example` to `collector/burnwatch.env` beside the
+script and fill in the URL and token, then add to
+`%USERPROFILE%\.claude\settings.json`:
 
 ```json
 "statusLine": {
@@ -144,18 +156,26 @@ the URL and token, then add to `%USERPROFILE%\.claude\settings.json`:
 }
 ```
 
-**Use forward slashes in that path.** See [Gotchas](#gotchas) — with
+**Use forward slashes in that path** — see [Gotchas](#gotchas); with
 backslashes it fails silently and nothing is ever reported.
+
+Be aware of the cost here: this one posts synchronously, and a render costs
+roughly **600 ms**, of which ~266 ms is PowerShell starting up. When the
+endpoint is unreachable a render can block for up to 2 s, after which a breaker
+suppresses further attempts for 60 s — so that stall recurs about once a minute
+until it recovers. A small compiled collector is on the roadmap for this reason.
+
+### Both platforms
 
 Claude Code reads `statusLine` at startup, so **restart any running session**
 before expecting data.
 
-## 3. Widget
+## The widget
 
-Open the daemon in a browser for the zero-build version:
+Open the deployment in a browser for the zero-build version:
 
 ```
-http://DAEMON:8787/?token=YOUR_TOKEN
+https://burnwatch.example.workers.dev/?token=YOUR_TOKEN
 ```
 
 Add `&page=2&norotate=1` to pin one card. For the real thing — frameless,
@@ -166,14 +186,18 @@ cd widget/src-tauri
 cargo build --release
 ```
 
-The binary lands in `widget/src-tauri/target/release/`. Point it at the daemon
-with the `BURNWATCH_URL` and `BURNWATCH_TOKEN` environment variables, or with a
-`config.json` in the app config directory (`%APPDATA%\io.github.kanylbullen.burnwatch\` on
-Windows, `~/.config/io.github.kanylbullen.burnwatch/` on Linux):
+Building needs Rust, plus WebView2 on Windows (preinstalled on Windows 11) or
+`libwebkit2gtk-4.1-dev` and `libsoup-3.0-dev` on Linux. The binary lands in
+`widget/src-tauri/target/release/`.
+
+Point it at your deployment with the `BURNWATCH_URL` and `BURNWATCH_TOKEN`
+environment variables, or with a `config.json` in the app config directory
+(`%APPDATA%\io.github.kanylbullen.burnwatch\` on Windows, `~/.config/io.github.kanylbullen.burnwatch/`
+on Linux):
 
 ```json
 {
-  "url": "http://DAEMON:8787",
+  "url": "https://burnwatch.example.workers.dev",
   "token": "YOUR_TOKEN",
   "width": 260,
   "height": 260,
@@ -181,14 +205,44 @@ Windows, `~/.config/io.github.kanylbullen.burnwatch/` on Linux):
 }
 ```
 
-Environment wins over the file, which the app rewrites when you move or resize
-the window. Click to page, drag to move, scroll or arrow keys to navigate, and
-use the tray icon to unpin or quit — a frameless window with no taskbar entry
-has no other way to be closed.
+Environment wins over the file. Note that the app rewrites that file whenever
+you move or resize the window, and writes the token into it in plain text — so
+supplying the token by environment does not keep it out of the config directory.
+
+Click to page, drag to move, scroll or arrow keys to navigate, and use the tray
+icon to unpin or quit: a frameless window with no taskbar entry has no other way
+to be closed.
+
+## Self-hosting instead
+
+A Bun daemon with the same API is included, for running this on your own
+machine rather than on Cloudflare. It is the older shape and carries the
+tradeoffs the Worker exists to avoid: it only reaches machines that can route to
+it, and it stops when its host does.
+
+```bash
+./install/setup.sh server     # generates a token, writes ~/.burnwatch/env,
+                              # installs and starts a systemd user unit
+bun run selfhost              # or run it in the foreground
+```
+
+The daemon reads `~/.burnwatch/env` itself, so a manual start picks up the same
+settings the unit uses. Leaving `BURNWATCH_TOKEN` empty disables authentication
+entirely — only do that alongside `BURNWATCH_HOST=127.0.0.1`.
+
+If your machines are on more than one subnet you will also need a firewall rule,
+scoped to your own networks rather than to the world:
+
+```bash
+sudo ufw allow from 192.168.0.0/16 to any port 8787 proto tcp
+```
 
 ## The JSON API
 
-`GET /api/state` — the contract any client reads, including firmware.
+`GET /api/state` — the contract any client reads, including firmware. Both this
+and `POST /ingest` require the token, sent either as `Authorization: Bearer …`
+or as a `?token=` query parameter. The widget's own static files are served
+without it.
 
 ```jsonc
 {
@@ -200,7 +254,7 @@ has no other way to be closed.
     { "name": "desktop", "last_seen_s": 4, "active": true },
     { "name": "laptop", "last_seen_s": 5400, "active": false }
   ],
-  "last_contact_s": 0,          // liveness: since ANY collector reported
+  "last_contact_s": 0,          // null until a collector has ever reported
   "windows": {
     "seven_day": {
       "pct": 23,
@@ -212,9 +266,9 @@ has no other way to be closed.
       "pace_ratio": 0.1272,
       "verdict": "speed_up",     // speed_up | on_pace | runs_out | unknown
       "speed_up_x": 7.88,        // null when no burn has been measured
-      "runs_out_at": null,
-      "early_by_s": null,
-      "used_today_pct": 1.81,    // null for windows shorter than a day
+      "runs_out_at": null,       // set only when verdict is runs_out
+      "early_by_s": null,        // set only when verdict is runs_out
+      "used_today_pct": 1.81,    // null when the series predates local midnight
       "samples": 145,
       "last_change_s": 0         // idleness, NOT health — use last_contact_s
     },
@@ -223,29 +277,34 @@ has no other way to be closed.
 }
 ```
 
-Both windows are `null` until the first sample arrives. `POST /ingest` takes
-Claude Code's status-line JSON verbatim, with an optional `X-Burnwatch-Host`
-header.
+A window is `null` before its first sample, and again between its reset and the
+first reading of the window that follows.
+
+`POST /ingest` takes Claude Code's status-line JSON verbatim, with an optional
+`X-Burnwatch-Host` header.
 
 ## Configuration
 
-Read by the daemon from `~/.burnwatch/env`:
+Worker settings live in `wrangler.jsonc` under `vars`, except the token, which
+is a secret (`wrangler secret put BURNWATCH_TOKEN`). The self-hosted daemon
+reads the same names from the environment or from `~/.burnwatch/env`.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `BURNWATCH_PORT` | `8787` | |
-| `BURNWATCH_HOST` | `0.0.0.0` | `127.0.0.1` if only this machine reports |
-| `BURNWATCH_TOKEN` | *(empty)* | Empty disables auth — only safe on loopback |
-| `BURNWATCH_DB` | `~/.burnwatch/burnwatch.db` | |
+| `BURNWATCH_TOKEN` | *(unset)* | Worker refuses all requests without it; daemon treats empty as auth-disabled |
 | `BURNWATCH_TZ` | `Europe/Stockholm` | Drives "used today" and displayed clock times |
 | `BURNWATCH_LOOKBACK_7D` | `86400` | Window for measuring weekly pace |
 | `BURNWATCH_LOOKBACK_5H` | `3600` | Window for measuring session pace |
-| `BURNWATCH_RETENTION_S` | `2592000` | Samples older than this are pruned |
+| `BURNWATCH_ACTIVE_SESSION_S` | `900` | How recently a session must have reported to count as active |
+| `BURNWATCH_RETENTION_S` | `2592000` | Samples older than this are pruned nightly |
+| `BURNWATCH_PORT` | `8787` | Self-hosted daemon only |
+| `BURNWATCH_HOST` | `0.0.0.0` | Self-hosted daemon only |
+| `BURNWATCH_DB` | `~/.burnwatch/burnwatch.db` | Self-hosted daemon only |
 
 ## Gotchas
 
-Four things cost real debugging time. They are documented here because none of
-them announce themselves.
+Five things cost real debugging time. They are documented because none of them
+announce themselves.
 
 **Forward slashes in the Windows `statusLine` path.** Claude Code runs the
 command through bash (git bash) on Windows, where every backslash is an escape
@@ -255,47 +314,58 @@ status line simply never appears and nothing is reported, with no message
 anywhere to say why.
 
 **`System.Net.Http` is not loaded in Windows PowerShell 5.1.**
-`[System.Net.Http.HttpClient]::new()` throws "Unable to find type", and inside
-a `try`/`catch` that is invisible — leaving a collector that prints a perfect
-status line and never reports. The script uses `curl.exe` instead, which ships
-with Windows 10+ and costs about 10 ms against a daemon on the LAN.
+`[System.Net.Http.HttpClient]::new()` throws "Unable to find type", and inside a
+`try`/`catch` that is invisible — leaving a collector that prints a perfect
+status line and never reports. The script uses `curl.exe` instead.
 
 **`statusline.ps1` must stay pure ASCII.** PowerShell 5.1 decodes a BOM-less
-file as the legacy ANSI code page, so a stray em dash inside a quoted string
-can terminate it early. Separately, the console is often not UTF-8, so
-non-ASCII *output* has to be built from code points at runtime with
+file as the legacy ANSI code page, so a stray em dash inside a quoted string can
+terminate it early. Separately, the console is often not UTF-8, so non-ASCII
+*output* has to be built from code points at runtime with
 `[Console]::OutputEncoding` forced. CI enforces the ASCII rule.
 
 **CSP source expressions default to the scheme's port.** In the Tauri shell,
-`connect-src http://*` permits port 80 only, so a daemon on 8787 is blocked and
-the widget reports "failed to fetch". It needs `http://*:*`.
+`connect-src https://*` permits port 443 only. A deployment on any other port
+needs `https://*:*`, or the widget reports "failed to fetch".
 
-To tell "never invoked" from "invoked but failed to report", look in `%TEMP%`
-(or `$TMPDIR`) for `burnwatch-<session-id>.json`. The collector writes that file
-before calling curl, so its presence proves the script ran.
+**Checking whether the collector ran at all.** Both collectors leave their
+outcome in `burnwatch-status` in the temp directory (`$TMPDIR` or `/tmp` on
+Linux and macOS, `%TEMP%` on Windows), holding a timestamp, the URL and curl's
+exit code. If that file is missing entirely, the script was never invoked — a
+different problem from one that ran and failed to report.
 
 ## Security
 
-The token is the only thing protecting the feed, and it travels over **plain
-HTTP**. That is fine on a trusted LAN or over Tailscale/WireGuard. Do not expose
-the port to the internet as-is; put it behind a TLS reverse proxy if it has to
-leave the network.
+The token is the only thing between the internet and your usage data, so make it
+long and random. Traffic is HTTPS end to end on Cloudflare.
 
-Static widget files are served without the token — they are inert markup
-carrying no usage data, and a stylesheet fetched by a relative `href` cannot
-present a credential. Everything under `/api/` requires it.
+For a stronger read side, put Cloudflare Access in front of `/api/state` and the
+widget, and issue a service token for headless clients. That splits reading from
+writing, which a single shared token does not.
+
+The data is not dramatic — percentages, machine names, session UUIDs — but the
+machine names do describe your fleet.
+
+The self-hosted daemon serves plain HTTP and is only appropriate on a trusted
+network or behind a TLS reverse proxy.
 
 ## Development
 
 ```bash
-bun test                  # forecast maths
-bun run dev               # daemon on :8787
+bun test           # forecast maths
+bun run typecheck  # shared core, daemon and Worker together
+bun run dev        # Worker on a local D1 (wrangler dev)
+bun run selfhost   # the Bun daemon instead
 ```
 
-The tests cover window rollovers, idle gaps counting as zero burn, run-out
-forecasting, the zero-pace case, exhausted windows and time-zone handling.
-`widget/src/app.js` is the reference implementation for anyone writing another
-client — it consumes exactly the payload documented above.
+For `bun run dev`, apply the migrations locally once with
+`bun run db:migrate:local`, and put `BURNWATCH_TOKEN=…` in a `.dev.vars` file.
+
+The tests cover window rollovers, expired windows, idle gaps counting as zero
+burn, lagging machines reporting stale readings, run-out forecasting, the
+zero-pace case and time-zone handling. `widget/src/app.js` is the reference
+implementation for anyone writing another client — it consumes exactly the
+payload documented above.
 
 ## Roadmap
 
@@ -303,10 +373,10 @@ client — it consumes exactly the payload documented above.
   interface and the widget is the reference for what to draw.
 - **Codex.** No equivalent status-line hook exists, so it needs its own
   collector.
-- **A native collector.** The PowerShell one costs ~600 ms per render, of
-  which ~266 ms is PowerShell startup. A small compiled binary would be ~5 ms.
-- **Alerts.** Right now you have to look at the widget to learn you are about
-  to run out.
+- **A native collector.** The PowerShell one costs ~600 ms per render. A small
+  compiled binary would be ~5 ms.
+- **Alerts.** Right now you have to look at the widget to learn you are about to
+  run out.
 
 ## License
 
