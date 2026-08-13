@@ -14,3 +14,6 @@ build.log
 # Local Worker secrets.
 .dev.vars
 .wrangler/
+
+# Holds your own D1 id and hostname. Copy wrangler.example.jsonc to start.
+wrangler.jsonc

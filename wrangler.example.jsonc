@@ -1,0 +1,47 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "burnwatch",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-08-01",
+
+  // The widget is plain HTML/CSS/JS with no build step, so the assets binding
+  // serves it directly. `run_worker_first` keeps the API off the asset router;
+  // everything else falls through to the static files.
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./widget/src",
+    "run_worker_first": ["/api/*", "/ingest", "/healthz"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "burnwatch",
+      "database_id": "<paste the id from `wrangler d1 create burnwatch`>",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // `custom_domain` makes Cloudflare create and manage the DNS record itself,
+  // provided the zone is on the same account. Collectors on a dozen machines
+  // then hold a stable hostname rather than a generated *.workers.dev one.
+  // Uncomment and set your own hostname to serve from a custom domain.
+  // "routes": [{ "pattern": "burnwatch.example.com", "custom_domain": true }],
+
+  // Retention runs nightly instead of on the ingest path, where it would put a
+  // full-table scan in front of every status-line render on every machine.
+  "triggers": {
+    "crons": ["17 4 * * *"]
+  },
+
+  "vars": {
+    "BURNWATCH_TZ": "Europe/Stockholm"
+  },
+
+  // BURNWATCH_TOKEN is a secret, never a var:
+  //   npx wrangler secret put BURNWATCH_TOKEN
+  // Without it the Worker refuses every request rather than serving the feed
+  // openly, so a half-finished deploy fails closed.
+
+  "observability": { "enabled": true }
+}

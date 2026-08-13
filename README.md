@@ -91,10 +91,12 @@ git clone https://github.com/kanylbullen/burnwatch
 cd burnwatch
 bun install          # or npm install
 
+cp wrangler.example.jsonc wrangler.jsonc
 npx wrangler d1 create burnwatch
 ```
 
-Paste the printed `database_id` into `wrangler.jsonc`, then:
+`wrangler.jsonc` is git-ignored, because it ends up holding your own database id
+and hostname. Paste the printed `database_id` into it, then:
 
 ```bash
 npx wrangler d1 migrations apply burnwatch --remote
