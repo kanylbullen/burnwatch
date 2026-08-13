@@ -1,0 +1,367 @@
+/*
+ * burnwatch widget.
+ *
+ * Deliberately single-look: this mimics an always-on OLED panel, so it commits
+ * to black rather than following the host theme. Everything scales off vmin so
+ * the same markup reads correctly in a 200px desktop widget, a maximised
+ * window, and later a 240x240 ESP32-S3 display.
+ */
+
+:root {
+  --bg: #000;
+  --fg: #fff;
+  --dim: #8b8b93;
+  --accent: #ff4b12;
+  --accent-soft: #ff8a4c;
+  --rest: #6f62d8;
+  --link: #4a63ff;
+  /* Past this the panel stops growing and centres instead. A widget blown up
+     to fill a maximised browser window reads as a broken page, not a widget. */
+  --max: 420px;
+  color-scheme: dark;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  display: grid;
+  place-items: center;
+  font-family: Bahnschrift, "DIN Alternate", "Roboto Condensed",
+    "Liberation Sans Narrow", "Arial Narrow", system-ui, sans-serif;
+  font-stretch: 87.5%;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+/* ---------- shell ---------- */
+
+/*
+ * A square panel that fills a small window and caps in a large one. Type scales
+ * off the panel (cqmin), not the viewport, so the same markup is right at the
+ * Tauri window's 260px, in a maximised browser tab, and on a 240px display.
+ */
+#shell {
+  position: relative;
+  width: min(100vw, 100vh, var(--max));
+  height: min(100vw, 100vh, var(--max));
+  container-type: size;
+  overflow: hidden;
+  --u: 1cqmin;
+}
+
+/* ---------- deck ---------- */
+
+#deck {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  transition: transform 320ms cubic-bezier(0.22, 0.8, 0.3, 1);
+}
+
+.card {
+  flex: 0 0 100%;
+  height: 100%;
+  padding: calc(var(--u) * 7) calc(var(--u) * 7) calc(var(--u) * 9);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- shared pieces ---------- */
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: calc(var(--u) * 2);
+}
+
+.row.baseline {
+  align-items: flex-end;
+  margin-top: auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+  font-size: calc(var(--u) * 6);
+}
+
+.brand.plain {
+  letter-spacing: 0.1em;
+}
+
+.dot {
+  width: calc(var(--u) * 5);
+  height: calc(var(--u) * 5);
+  border: calc(var(--u) * 0.7) solid var(--accent);
+  border-radius: 50%;
+  flex: none;
+}
+
+.meta {
+  font-size: calc(var(--u) * 4.4);
+  color: var(--fg);
+  text-align: right;
+  line-height: 1.15;
+  opacity: 0.95;
+}
+
+.kicker {
+  margin-top: calc(var(--u) * 5);
+  font-size: calc(var(--u) * 5);
+  color: #d9d9e2;
+  letter-spacing: 0.08em;
+}
+
+.hero {
+  font-size: calc(var(--u) * 26);
+  line-height: 0.92;
+  letter-spacing: -0.01em;
+  margin: calc(var(--u) * 2) 0 calc(var(--u) * 4);
+  font-stretch: 100%;
+}
+
+/*
+ * No sample yet. An em dash set at hero size renders as a wide white slab that
+ * reads as a broken glyph, so the placeholder shrinks and names itself instead.
+ */
+.hero.empty,
+.verdict.empty {
+  font-size: calc(var(--u) * 8);
+  color: var(--dim);
+  letter-spacing: 0.06em;
+}
+
+.hero.empty {
+  margin-top: calc(var(--u) * 8);
+}
+
+/* ---------- meter ---------- */
+
+.bar {
+  position: relative;
+  height: calc(var(--u) * 3.4);
+  border-radius: 999px;
+  background: var(--rest);
+  overflow: hidden;
+}
+
+/* A full purple bar with the pace mark pinned at zero would claim "100%
+   remaining" on a window we know nothing about. */
+.bar.empty {
+  background: #26262e;
+}
+
+.bar.empty > i {
+  display: none;
+}
+
+.bar > span {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ff2d00, var(--accent));
+  transition: width 500ms cubic-bezier(0.22, 0.8, 0.3, 1);
+}
+
+/* Marker showing where an even, finish-exactly-at-reset pace would have you. */
+.bar > i {
+  position: absolute;
+  top: -15%;
+  height: 130%;
+  width: calc(var(--u) * 0.9);
+  background: var(--fg);
+  border-radius: 2px;
+  transition: left 500ms cubic-bezier(0.22, 0.8, 0.3, 1);
+}
+
+/* ---------- footer stats ---------- */
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 0.6);
+  min-width: 0;
+}
+
+.stat.right {
+  text-align: right;
+}
+
+.stat b {
+  font-size: calc(var(--u) * 8);
+  line-height: 1;
+  font-stretch: 100%;
+}
+
+.stat small {
+  font-size: calc(var(--u) * 3.6);
+  color: var(--dim);
+  letter-spacing: 0.09em;
+  white-space: nowrap;
+}
+
+.accent b,
+b.accent {
+  color: var(--accent);
+}
+
+.stat.accent b {
+  color: var(--accent);
+}
+
+/* ---------- burn-rate card ---------- */
+
+.split {
+  padding: calc(var(--u) * 3) 0;
+}
+
+.split + .split {
+  border-top: 1px solid #23232a;
+  margin-top: auto;
+}
+
+.split .kicker {
+  margin-top: 0;
+}
+
+.verdict {
+  font-size: calc(var(--u) * 13);
+  line-height: 1;
+  margin-top: calc(var(--u) * 1.5);
+  font-stretch: 100%;
+}
+
+.verdict.small {
+  font-size: calc(var(--u) * 10);
+}
+
+/* Sized to keep the longest phrase ("N.N× CURRENT PACE TO MAX OUT") on one
+   line at widget sizes, matching how the reference panel sets it. */
+.note {
+  margin-top: calc(var(--u) * 1.8);
+  font-size: calc(var(--u) * 3.9);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note.accent {
+  color: var(--accent);
+}
+
+.note.link {
+  color: var(--link);
+}
+
+/* ---------- status card ---------- */
+
+.hosts {
+  list-style: none;
+  margin-top: calc(var(--u) * 3);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 1.6);
+  overflow: hidden;
+}
+
+.hosts li {
+  font-size: calc(var(--u) * 5);
+  color: #d9d9e2;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+  white-space: nowrap;
+}
+
+.hosts li::before {
+  content: "";
+  width: calc(var(--u) * 2);
+  height: calc(var(--u) * 2);
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+
+.hosts li.none,
+.hosts li.idle {
+  color: var(--dim);
+}
+
+.hosts li.none::before,
+.hosts li.idle::before {
+  background: #43434d;
+}
+
+/* ---------- paging dots ---------- */
+
+.dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--u) * 3.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+}
+
+.dots b {
+  width: calc(var(--u) * 1.6);
+  height: calc(var(--u) * 1.6);
+  border-radius: 999px;
+  background: #4a4a55;
+  transition: width 240ms ease, background 240ms ease;
+}
+
+.dots b.on {
+  width: calc(var(--u) * 5);
+  background: var(--fg);
+}
+
+/* ---------- degraded states ---------- */
+
+/* Nobody has reported in a while: the reading is history, so say so quietly
+   rather than presenting a stale number as if it were live. */
+body[data-stale="1"] #deck {
+  opacity: 0.42;
+}
+
+.error {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: calc(var(--u) * 2);
+  text-align: center;
+  font-size: calc(var(--u) * 3.6);
+  color: var(--accent);
+  background: #000;
+  letter-spacing: 0.06em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #deck,
+  .bar > span,
+  .bar > i,
+  .dots b {
+    transition: none;
+  }
+}

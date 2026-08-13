@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "widget",
+  "description": "Window control the frameless widget needs to move, pin and close itself",
+  "windows": ["widget"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-set-position",
+    "core:window:allow-outer-position",
+    "core:window:allow-close",
+    "core:window:allow-show",
+    "core:window:allow-hide"
+  ]
+}

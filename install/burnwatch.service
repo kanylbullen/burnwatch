@@ -1,0 +1,30 @@
+[Unit]
+Description=burnwatch — Claude Code rate-limit burn-rate daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.burnwatch/env
+# setup.sh rewrites this line with the absolute path to your bun binary and
+# checkout. systemd resolves neither $PATH lookups nor ~ here, so both have to
+# be absolute; the values below are only a sensible default.
+ExecStart=%h/.bun/bin/bun run %h/burnwatch/daemon/server.ts
+Restart=always
+RestartSec=3
+
+# The daemon reads nothing but its own database and answers HTTP; give it no
+# more of the filesystem than that.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.burnwatch
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+MemoryMax=256M
+
+[Install]
+WantedBy=default.target

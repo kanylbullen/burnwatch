@@ -1,0 +1,34 @@
+{
+  "name": "burnwatch",
+  "version": "0.1.0",
+  "description": "Desk widget for your Claude Code rate limits: how much of the weekly and 5-hour allowance is gone, how fast you are burning it, and whether you run dry before the reset",
+  "license": "MIT",
+  "author": "kanylbullen",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kanylbullen/burnwatch.git"
+  },
+  "homepage": "https://github.com/kanylbullen/burnwatch#readme",
+  "bugs": {
+    "url": "https://github.com/kanylbullen/burnwatch/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "rate-limit",
+    "usage",
+    "burn-rate",
+    "widget",
+    "tauri",
+    "statusline"
+  ],
+  "type": "module",
+  "private": false,
+  "scripts": {
+    "dev": "bun run daemon/server.ts",
+    "start": "bun run daemon/server.ts",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

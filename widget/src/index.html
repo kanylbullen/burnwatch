@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en" data-page="0">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>burnwatch</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div id="shell">
+    <main id="deck" aria-live="polite">
+      <!-- 1. Weekly allowance -->
+      <section class="card" data-card="weekly">
+        <header class="row">
+          <span class="brand"><i class="dot"></i>CLAUDE</span>
+          <span class="meta" data-bind="sessions">—</span>
+        </header>
+        <p class="kicker">WEEKLY · ALL MODELS</p>
+        <p class="hero" data-bind="week.pct">—</p>
+        <div class="bar"><span data-bind="week.bar"></span><i data-bind="week.tick"></i></div>
+        <footer class="row baseline">
+          <span class="stat accent">
+            <b data-bind="week.today">—</b>
+            <small>USED TODAY</small>
+          </span>
+          <span class="stat right">
+            <b data-bind="week.reset">—</b>
+            <small>TO RESET</small>
+          </span>
+        </footer>
+      </section>
+
+      <!-- 2. Five-hour session allowance -->
+      <section class="card" data-card="session">
+        <header class="row">
+          <span class="brand"><i class="dot"></i>CLAUDE</span>
+          <span class="meta">SESSION</span>
+        </header>
+        <p class="kicker">5-HOUR · ALL MODELS</p>
+        <p class="hero" data-bind="five.pct">—</p>
+        <div class="bar"><span data-bind="five.bar"></span><i data-bind="five.tick"></i></div>
+        <footer class="row baseline">
+          <span class="stat accent">
+            <b data-bind="five.rate">—</b>
+            <small>PER HOUR</small>
+          </span>
+          <span class="stat right">
+            <b data-bind="five.reset">—</b>
+            <small>TO RESET</small>
+          </span>
+        </footer>
+      </section>
+
+      <!-- 3. Burn rate forecast -->
+      <section class="card" data-card="burn">
+        <header class="row">
+          <span class="brand plain">BURN RATE</span>
+          <span class="meta stack">WEEKLY<br />FORECAST</span>
+        </header>
+        <div class="split">
+          <p class="kicker">CLAUDE · ALL MODELS</p>
+          <p class="verdict" data-bind="week.verdict">—</p>
+          <p class="note accent" data-bind="week.detail">—</p>
+        </div>
+        <div class="split">
+          <p class="kicker">CLAUDE · 5-HOUR</p>
+          <p class="verdict small" data-bind="five.verdict">—</p>
+          <p class="note link" data-bind="five.detail">—</p>
+        </div>
+      </section>
+
+      <!-- 4. Pipeline health -->
+      <section class="card" data-card="status">
+        <header class="row">
+          <span class="brand plain">STATUS</span>
+          <span class="meta" data-bind="contact">—</span>
+        </header>
+        <p class="kicker">REPORTING HOSTS</p>
+        <ul class="hosts" data-bind="hosts"></ul>
+        <footer class="row baseline">
+          <span class="stat"><b data-bind="samples">—</b><small>SAMPLES · 7D</small></span>
+          <span class="stat right"><b data-bind="tz">—</b><small>TIME ZONE</small></span>
+        </footer>
+      </section>
+    </main>
+
+    <nav class="dots" id="dots" aria-hidden="true"></nav>
+    <p class="error" id="error" hidden></p>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

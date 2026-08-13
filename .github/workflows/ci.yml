@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  daemon:
+    name: Daemon (forecast maths)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Tests
+        run: bun test
+
+  collector:
+    name: Collector scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax
+        run: sh -n collector/statusline.sh
+      # PowerShell 5.1 decodes a BOM-less file as the legacy ANSI code page, so
+      # a stray non-ASCII byte can end a string early and break the script on
+      # Windows while looking fine everywhere else.
+      - name: statusline.ps1 must be pure ASCII
+        run: |
+          if LC_ALL=C grep -n '[^ -~]' collector/statusline.ps1; then
+            echo "::error file=collector/statusline.ps1::non-ASCII byte found"
+            exit 1
+          fi
+          echo "collector/statusline.ps1 is pure ASCII"
+
+  widget:
+    name: Widget shell
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: widget/src-tauri
+      - name: Check
+        run: cargo check --manifest-path widget/src-tauri/Cargo.toml

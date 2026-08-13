@@ -1,0 +1,12 @@
+node_modules/
+widget/src-tauri/target/
+widget/src-tauri/gen/schemas/
+
+# Holds the daemon token.
+collector/burnwatch.env
+.env
+
+*.db
+*.db-wal
+*.db-shm
+build.log
