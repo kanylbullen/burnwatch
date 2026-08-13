@@ -1,5 +1,5 @@
 import { normalize } from "node:path/posix";
-import { computeWindow, type WindowState } from "./compute";
+import { computeWindow, type WindowState } from "../core/compute";
 import { config, WINDOW_KEYS, type WindowKey } from "./config";
 import { Store } from "./store";
 

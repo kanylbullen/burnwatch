@@ -6,16 +6,22 @@ on:
   pull_request:
 
 jobs:
-  daemon:
-    name: Daemon (forecast maths)
+  core:
+    name: Forecast maths and types
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+      - name: Install
+        run: bun install --frozen-lockfile
       - name: Tests
         run: bun test
+      # Covers the shared core, the Bun daemon and the Worker together, so the
+      # two deployment shapes cannot drift apart on the payload they produce.
+      - name: Typecheck
+        run: bun run typecheck
 
   collector:
     name: Collector scripts

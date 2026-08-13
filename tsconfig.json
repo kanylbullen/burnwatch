@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["esnext"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "verbatimModuleSyntax": true,
+    // Both runtimes define fetch, Request and Response. They agree closely
+    // enough for the shared core, and each entry point is only ever bundled by
+    // one of them, so the overlap is not worth splitting the project over.
+    "types": ["@cloudflare/workers-types", "bun"]
+  },
+  "include": ["core", "daemon", "worker"]
+}

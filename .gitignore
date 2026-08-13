@@ -10,3 +10,7 @@ collector/burnwatch.env
 *.db-wal
 *.db-shm
 build.log
+
+# Local Worker secrets.
+.dev.vars
+.wrangler/

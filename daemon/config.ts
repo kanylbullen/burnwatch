@@ -1,10 +1,9 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { DEFAULTS, WINDOW_LENGTH, num } from "../core/defaults";
 
-const H = 3600;
-const num = (v: string | undefined, d: number) =>
-  v === undefined || v.trim() === "" || Number.isNaN(Number(v)) ? d : Number(v);
+export { WINDOW_KEYS, type WindowKey } from "../core/defaults";
 
 /**
  * Loads ~/.burnwatch/env into the environment.
@@ -32,8 +31,7 @@ function loadEnvFile(): void {
     if (!m) continue;
     const [, key, rawValue] = m;
     if (process.env[key] !== undefined) continue;
-    const value = rawValue.trim().replace(/^(['"])(.*)\1$/, "$2");
-    process.env[key] = value;
+    process.env[key] = rawValue.trim().replace(/^(['"])(.*)\1$/, "$2");
   }
 }
 
@@ -51,30 +49,22 @@ export const config = {
    */
   token: process.env.BURNWATCH_TOKEN ?? "",
 
-  timeZone: process.env.BURNWATCH_TZ ?? "Europe/Stockholm",
+  timeZone: process.env.BURNWATCH_TZ || DEFAULTS.timeZone,
 
-  /** How far back "current pace" looks, per window. */
   lookback: {
-    five_hour: num(process.env.BURNWATCH_LOOKBACK_5H, 1 * H),
-    seven_day: num(process.env.BURNWATCH_LOOKBACK_7D, 24 * H),
+    five_hour: num(process.env.BURNWATCH_LOOKBACK_5H, DEFAULTS.lookback.five_hour),
+    seven_day: num(process.env.BURNWATCH_LOOKBACK_7D, DEFAULTS.lookback.seven_day),
   },
 
-  /** Nominal window lengths, used to place the window's start. */
-  windowLength: {
-    five_hour: 5 * H,
-    seven_day: 7 * 24 * H,
-  },
+  windowLength: WINDOW_LENGTH,
 
-  /** Pace ratio band that counts as "on pace" rather than under/over. */
-  onPaceLow: 0.9,
-  onPaceHigh: 1.0,
+  onPaceLow: DEFAULTS.onPaceLow,
+  onPaceHigh: DEFAULTS.onPaceHigh,
 
-  /** A session counts as active if it reported within this many seconds. */
-  activeSessionS: num(process.env.BURNWATCH_ACTIVE_SESSION_S, 900),
+  activeSessionS: num(
+    process.env.BURNWATCH_ACTIVE_SESSION_S,
+    DEFAULTS.activeSessionS,
+  ),
 
-  /** Samples older than this are pruned on write. */
-  retentionS: num(process.env.BURNWATCH_RETENTION_S, 30 * 24 * H),
+  retentionS: num(process.env.BURNWATCH_RETENTION_S, DEFAULTS.retentionS),
 } as const;
-
-export type WindowKey = "five_hour" | "seven_day";
-export const WINDOW_KEYS: WindowKey[] = ["five_hour", "seven_day"];

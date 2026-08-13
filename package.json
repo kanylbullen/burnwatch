@@ -24,11 +24,18 @@
   "type": "module",
   "private": false,
   "scripts": {
-    "dev": "bun run daemon/server.ts",
-    "start": "bun run daemon/server.ts",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply burnwatch --remote",
+    "db:migrate:local": "wrangler d1 migrations apply burnwatch --local",
+    "selfhost": "bun run daemon/server.ts",
+    "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@cloudflare/workers-types": "^5.20260813.1",
+    "@types/bun": "latest",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.123.0"
   }
 }
