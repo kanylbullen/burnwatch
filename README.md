@@ -305,7 +305,7 @@ reads the same names from the environment or from `~/.burnwatch/env`.
 
 ## Gotchas
 
-Five things cost real debugging time. They are documented because none of them
+Six things cost real debugging time. They are documented because none of them
 announce themselves.
 
 **Forward slashes in the Windows `statusLine` path.** Claude Code runs the
@@ -329,6 +329,21 @@ terminate it early. Separately, the console is often not UTF-8, so non-ASCII
 **CSP source expressions default to the scheme's port.** In the Tauri shell,
 `connect-src https://*` permits port 443 only. A deployment on any other port
 needs `https://*:*`, or the widget reports "failed to fetch".
+
+**The status line only exists in the terminal.** Claude Code's IDE extensions
+run it headless (`--output-format stream-json`), where there is no status line
+to render — so the `statusLine` command is never invoked and that machine
+silently reports nothing, no matter how correctly it is configured. Verified by
+watching the collector's own status file stay untouched through an active
+extension session. Nothing else carries `rate_limits` either: it appears in the
+status-line payload and nowhere else, not in hooks and not in the
+OpenTelemetry metrics, which count this machine's tokens rather than the
+account's percentage.
+
+This costs resolution, not correctness. The percentages are account-wide, so a
+reading taken on any machine already includes what you burned on the others —
+the series just gets coarser. Run `claude` in a terminal on a machine you want
+represented in the host list.
 
 **Checking whether the collector ran at all.** Both collectors leave their
 outcome in `burnwatch-status` in the temp directory (`$TMPDIR` or `/tmp` on
