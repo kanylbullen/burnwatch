@@ -13,6 +13,8 @@ export type Env = {
   ASSETS: Fetcher;
   /** Shared secret, set with `wrangler secret put BURNWATCH_TOKEN`. */
   BURNWATCH_TOKEN?: string;
+  /** Optional read-only secret for phones, watches and displays. */
+  BURNWATCH_READ_TOKEN?: string;
   /**
    * Optional Claude API token, from `claude setup-token`. Its only use here is
    * to read the rate-limit headers off a one-token request, which closes the
@@ -64,28 +66,37 @@ const json = (body: unknown, status = 200) =>
     },
   });
 
-/**
- * Constant-time-ish comparison of the presented credential.
- *
- * Unlike the LAN daemon this endpoint is reachable from the internet, so an
- * empty token is refused outright rather than treated as "auth disabled": a
- * misconfigured deploy must fail closed, not publish the feed to everyone.
- */
-function authorized(req: Request, url: URL, env: Env): boolean {
-  const expected = env.BURNWATCH_TOKEN ?? "";
-  if (expected === "") return false;
-
-  const header = req.headers.get("authorization") ?? "";
-  const given = header.startsWith("Bearer ")
-    ? header.slice(7)
-    : (url.searchParams.get("token") ?? "");
-
-  if (given.length !== expected.length) return false;
+/** Length-independent comparison, so a mismatch leaks neither size nor prefix. */
+function sameSecret(given: string, expected: string): boolean {
+  if (expected === "" || given.length !== expected.length) return false;
   let diff = 0;
   for (let i = 0; i < given.length; i++) {
     diff |= given.charCodeAt(i) ^ expected.charCodeAt(i);
   }
   return diff === 0;
+}
+
+/**
+ * Two credentials, because reading and writing carry different risk.
+ *
+ * BURNWATCH_TOKEN does everything and belongs on machines that report.
+ * BURNWATCH_READ_TOKEN, if set, opens GET /api/state and nothing else — it is
+ * what a phone, a watch or a display should carry, so that losing one of them
+ * cannot put invented readings into your history. Without it, the full token
+ * remains the only key and behaviour is unchanged.
+ *
+ * Unlike the LAN daemon this endpoint faces the internet, so an unset token is
+ * refused outright rather than read as "auth disabled": a half-finished deploy
+ * has to fail closed.
+ */
+function authorized(req: Request, url: URL, env: Env, write: boolean): boolean {
+  const header = req.headers.get("authorization") ?? "";
+  const given = header.startsWith("Bearer ")
+    ? header.slice(7)
+    : (url.searchParams.get("token") ?? "");
+
+  if (sameSecret(given, env.BURNWATCH_TOKEN ?? "")) return true;
+  return !write && sameSecret(given, env.BURNWATCH_READ_TOKEN ?? "");
 }
 
 async function ingest(
@@ -289,7 +300,9 @@ export default {
     if (req.method === "OPTIONS") return json({ ok: true });
     if (url.pathname === "/healthz") return json({ ok: true });
 
-    if (!authorized(req, url, env)) {
+    // Writing needs the full token; reading accepts the read-only one too.
+    const write = url.pathname === "/ingest";
+    if (!authorized(req, url, env, write)) {
       return json({ ok: false, error: "unauthorized" }, 401);
     }
 

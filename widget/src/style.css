@@ -8,17 +8,43 @@
  */
 
 :root {
-  --bg: #000;
+  /* Split into channels so the background can take an alpha without every
+     other colour having to become translucent with it. */
+  --bg-rgb: 0 0 0;
+  --bg-alpha: 1;
+  --bg: rgb(var(--bg-rgb) / var(--bg-alpha));
   --fg: #fff;
   --dim: #8b8b93;
   --accent: #ff4b12;
   --accent-soft: #ff8a4c;
   --rest: #6f62d8;
   --link: #4a63ff;
+  --rule: #23232a;
+  --meter-empty: #26262e;
+  --dot-off: #4a4a55;
   /* Past this the panel stops growing and centres instead. A widget blown up
      to fill a maximised browser window reads as a broken page, not a widget. */
   --max: 420px;
   color-scheme: dark;
+}
+
+/*
+ * Light is a deliberate re-tune, not an inversion. The accent has to stay
+ * legible on paper-white, the unspent remainder needs far more contrast than
+ * it does against black, and the dim grey has to darken rather than lighten.
+ */
+:root[data-theme="light"] {
+  --bg-rgb: 246 246 248;
+  --fg: #16161c;
+  --dim: #63636e;
+  --accent: #d63200;
+  --accent-soft: #e2703c;
+  --rest: #8f83e8;
+  --link: #2b41d8;
+  --rule: #d9d9e0;
+  --meter-empty: #dededf;
+  --dot-off: #bcbcc6;
+  color-scheme: light;
 }
 
 * {
@@ -130,7 +156,8 @@ body {
 .kicker {
   margin-top: calc(var(--u) * 5);
   font-size: calc(var(--u) * 5);
-  color: #d9d9e2;
+  color: var(--fg);
+  opacity: 0.86;
   letter-spacing: 0.08em;
 }
 
@@ -170,7 +197,7 @@ body {
 /* A full purple bar with the pace mark pinned at zero would claim "100%
    remaining" on a window we know nothing about. */
 .bar.empty {
-  background: #26262e;
+  background: var(--meter-empty);
 }
 
 .bar.empty > i {
@@ -244,7 +271,7 @@ b.accent {
 }
 
 .split + .split {
-  border-top: 1px solid #23232a;
+  border-top: 1px solid var(--rule);
   margin-top: auto;
 }
 
@@ -310,7 +337,8 @@ b.accent {
 
 .hosts li {
   font-size: calc(var(--u) * 5);
-  color: #d9d9e2;
+  color: var(--fg);
+  opacity: 0.86;
   display: flex;
   align-items: center;
   gap: calc(var(--u) * 2);
@@ -333,7 +361,7 @@ b.accent {
 
 .hosts li.none::before,
 .hosts li.idle::before {
-  background: #43434d;
+  background: var(--dot-off);
 }
 
 /* Quiet when the poll is healthy, loud when it is not: this line exists to be
@@ -367,7 +395,7 @@ b.accent {
   width: calc(var(--u) * 1.6);
   height: calc(var(--u) * 1.6);
   border-radius: 999px;
-  background: #4a4a55;
+  background: var(--dot-off);
   transition: width 240ms ease, background 240ms ease;
 }
 
@@ -391,7 +419,7 @@ body[data-stale="1"] #deck {
   text-align: center;
   font-size: calc(var(--u) * 3.6);
   color: var(--accent);
-  background: #000;
+  background: var(--bg);
   letter-spacing: 0.06em;
 }
 

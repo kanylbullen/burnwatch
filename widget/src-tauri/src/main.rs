@@ -6,10 +6,10 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use tauri::image::Image;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem};
+use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{
-    AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl,
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl,
     WebviewWindowBuilder, WindowEvent,
 };
 
@@ -152,7 +152,20 @@ struct Settings {
     width: u32,
     height: u32,
     always_on_top: bool,
+    /// "dark" or "light".
+    theme: String,
+    /// Background opacity in percent. 100 is solid, 0 leaves only the text.
+    opacity: u8,
 }
+
+/// The subset the page needs in order to paint itself.
+#[derive(Clone, Serialize)]
+struct Appearance {
+    theme: String,
+    opacity: u8,
+}
+
+const OPACITY_STEPS: [u8; 5] = [100, 85, 65, 40, 15];
 
 impl Default for Settings {
     fn default() -> Self {
@@ -164,6 +177,17 @@ impl Default for Settings {
             width: 260,
             height: 260,
             always_on_top: true,
+            theme: "dark".into(),
+            opacity: 100,
+        }
+    }
+}
+
+impl Settings {
+    fn appearance(&self) -> Appearance {
+        Appearance {
+            theme: self.theme.clone(),
+            opacity: self.opacity,
         }
     }
 }
@@ -225,7 +249,12 @@ fn main() {
             // first paint rather than racing an eval() sent after load.
             let boot = format!(
                 "globalThis.__BURNWATCH__ = {};",
-                serde_json::json!({ "url": settings.url, "token": settings.token })
+                serde_json::json!({
+                    "url": settings.url,
+                    "token": settings.token,
+                    "theme": settings.theme,
+                    "opacity": settings.opacity,
+                })
             );
 
             let window =
@@ -234,11 +263,11 @@ fn main() {
                     .min_inner_size(180.0, 180.0)
                     .resizable(true)
                     .decorations(false)
-                    // Deliberately not transparent. The page paints an opaque
-                    // black panel edge to edge, so there is nothing to see
-                    // through — and on macOS the builder only offers
-                    // `transparent` behind Tauri's macos-private-api feature,
-                    // which is a lot of coupling for an unused effect.
+                    // Always transparent at the window level; how much shows
+                    // through is the page's business, set by the opacity menu.
+                    // Doing it the other way — rebuilding the window on each
+                    // change — would lose position, focus and the webview.
+                    .transparent(true)
                     .always_on_top(settings.always_on_top)
                     .skip_taskbar(true)
                     .shadow(false)
@@ -265,8 +294,51 @@ fn main() {
                 settings.always_on_top,
                 None::<&str>,
             )?;
+
+            let dark = CheckMenuItem::with_id(
+                app, "theme:dark", "Dark", true, settings.theme == "dark", None::<&str>,
+            )?;
+            let light = CheckMenuItem::with_id(
+                app, "theme:light", "Light", true, settings.theme == "light", None::<&str>,
+            )?;
+            let theme_menu = Submenu::with_items(app, "Theme", true, &[&dark, &light])?;
+
+            let mut steps = Vec::new();
+            for step in OPACITY_STEPS {
+                steps.push(CheckMenuItem::with_id(
+                    app,
+                    format!("opacity:{step}"),
+                    if step == 100 { "Solid".into() } else { format!("{step}%") },
+                    true,
+                    settings.opacity == step,
+                    None::<&str>,
+                )?);
+            }
+            let step_refs: Vec<&dyn IsMenuItem<_>> =
+                steps.iter().map(|i| i as &dyn IsMenuItem<_>).collect();
+            let opacity_menu = Submenu::with_items(app, "Background", true, &step_refs)?;
+
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&pin, &quit])?;
+            let menu =
+                Menu::with_items(app, &[&pin, &theme_menu, &opacity_menu, &quit])?;
+
+            // The check marks are driven from the saved settings rather than
+            // toggled in place, so the menu can never drift out of step with
+            // what is actually stored.
+            let sync = {
+                let pin = pin.clone();
+                let dark = dark.clone();
+                let light = light.clone();
+                let steps = steps.clone();
+                move |s: &Settings| {
+                    let _ = pin.set_checked(s.always_on_top);
+                    let _ = dark.set_checked(s.theme == "dark");
+                    let _ = light.set_checked(s.theme == "light");
+                    for (item, step) in steps.iter().zip(OPACITY_STEPS) {
+                        let _ = item.set_checked(s.opacity == step);
+                    }
+                }
+            };
 
             // A frameless, taskbar-less window has no other way to be closed or
             // unpinned once it is on screen.
@@ -275,18 +347,36 @@ fn main() {
                 .tooltip("burnwatch — waiting for a reading")
                 .menu(&menu)
                 .show_menu_on_left_click(true)
-                .on_menu_event(move |app, event| match event.id().as_ref() {
-                    "quit" => app.exit(0),
-                    "pin" => {
-                        if let Some(w) = app.get_webview_window(WINDOW_LABEL) {
-                            let path = config_path(app);
-                            let mut s = Settings::load(&path);
-                            s.always_on_top = !s.always_on_top;
-                            let _ = w.set_always_on_top(s.always_on_top);
-                            s.save(&path);
-                        }
+                .on_menu_event(move |app, event| {
+                    let id = event.id().as_ref().to_string();
+                    if id == "quit" {
+                        app.exit(0);
+                        return;
                     }
-                    _ => {}
+
+                    let path = config_path(app);
+                    let mut s = Settings::load(&path);
+
+                    if id == "pin" {
+                        s.always_on_top = !s.always_on_top;
+                        if let Some(w) = app.get_webview_window(WINDOW_LABEL) {
+                            let _ = w.set_always_on_top(s.always_on_top);
+                        }
+                    } else if let Some(theme) = id.strip_prefix("theme:") {
+                        s.theme = theme.to_string();
+                    } else if let Some(step) = id.strip_prefix("opacity:") {
+                        match step.parse::<u8>() {
+                            Ok(v) => s.opacity = v,
+                            Err(_) => return,
+                        }
+                    } else {
+                        return;
+                    }
+
+                    s.save(&path);
+                    sync(&s);
+                    // The page owns how it looks; Rust only says what changed.
+                    let _ = app.emit("appearance", s.appearance());
                 })
                 .build(app)?;
 

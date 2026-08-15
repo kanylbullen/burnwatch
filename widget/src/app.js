@@ -425,7 +425,34 @@ function win(now, pct, resetsInS, lengthS, o) {
  * token rides in the page URL; inside the Tauri shell the same files are
  * bundled locally and the host injects the daemon's address and credential.
  */
+/**
+ * Applies theme and background opacity.
+ *
+ * The window itself is always transparent; how much shows through is decided
+ * here, so changing it costs a repaint rather than rebuilding the window and
+ * losing its position.
+ */
+function applyAppearance(a) {
+  if (!a) return;
+  const root = document.documentElement;
+  if (a.theme === "light" || a.theme === "dark") {
+    root.dataset.theme = a.theme;
+  }
+  if (typeof a.opacity === "number") {
+    const clamped = Math.min(100, Math.max(0, a.opacity));
+    root.style.setProperty("--bg-alpha", String(clamped / 100));
+  }
+}
+
 const injected = globalThis.__BURNWATCH__ ?? null;
+applyAppearance(injected);
+// Query overrides, so appearance can be inspected in a browser as well as in
+// the shell: ?theme=light&opacity=40 alongside the fixtures.
+applyAppearance({
+  theme: params.get("theme") ?? undefined,
+  opacity: params.has("opacity") ? Number(params.get("opacity")) : undefined,
+});
+globalThis.__TAURI__?.event?.listen?.("appearance", (e) => applyAppearance(e.payload));
 const base = injected?.url?.replace(/\/+$/, "") ?? "";
 const token = injected?.token ?? params.get("token") ?? "";
 const endpoint = `${base}/api/state${
