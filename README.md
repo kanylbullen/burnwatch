@@ -178,6 +178,22 @@ until it recovers. A small compiled collector is on the roadmap for this reason.
 Claude Code reads `statusLine` at startup, so **restart any running session**
 before expecting data.
 
+### Presence, for headless sessions
+
+The status line never runs outside the interactive terminal. To have a machine
+appear in the host list even when you work in an IDE, on the web, or through
+the SDK, add the presence hook — it sends the machine's name and nothing else:
+
+```json
+"hooks": {
+  "SessionStart":     [{ "hooks": [{ "type": "command", "command": "/home/you/burnwatch/collector/presence.sh" }] }],
+  "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "/home/you/burnwatch/collector/presence.sh" }] }]
+}
+```
+
+Hooks fire in every mode, so this works where the collector cannot. The
+percentages still come from the poll.
+
 ## Polling, for the machines a collector cannot reach
 
 Collectors only fire in terminal sessions. IDE extensions, phones, and any
@@ -380,20 +396,23 @@ terminate it early. Separately, the console is often not UTF-8, so non-ASCII
 `connect-src https://*` permits port 443 only. A deployment on any other port
 needs `https://*:*`, or the widget reports "failed to fetch".
 
-**The status line only exists in the terminal.** Claude Code's IDE extensions
-run it headless (`--output-format stream-json`), where there is no status line
-to render — so the `statusLine` command is never invoked and that machine
-silently reports nothing, no matter how correctly it is configured. Verified by
-watching the collector's own status file stay untouched through an active
-extension session. Nothing else carries `rate_limits` either: it appears in the
-status-line payload and nowhere else, not in hooks and not in the
-OpenTelemetry metrics, which count this machine's tokens rather than the
-account's percentage.
+**The status line only exists in the terminal.** Every headless mode — the IDE
+extensions, web and remote-control sessions, `claude -p`, the SDK — runs with
+`--output-format stream-json` and renders no status line, so the `statusLine`
+command is never invoked and that machine reports nothing, however correctly it
+is configured. Verified by watching the collector's status file stay untouched
+through an active extension session.
 
-This costs resolution, not correctness. The percentages are account-wide, so a
-reading taken on any machine already includes what you burned on the others —
-the series just gets coarser. Run `claude` in a terminal on a machine you want
-represented in the host list.
+Nothing else carries `rate_limits`: not hooks, and not the OpenTelemetry
+metrics, which count this machine's tokens rather than the account's
+percentage.
+
+Two things make this survivable. The [poll](#polling-for-the-machines-a-collector-cannot-reach)
+reads the whole account, so usage from a headless session is measured even
+though the session cannot report it. And `collector/presence.sh`, wired to the
+`SessionStart` and `UserPromptSubmit` hooks, does fire in every mode — it sends
+no numbers, only the machine's name, so the host list reflects where you are
+actually working.
 
 **Checking whether the collector ran at all.** Both collectors leave their
 outcome in `burnwatch-status` in the temp directory (`$TMPDIR` or `/tmp` on
