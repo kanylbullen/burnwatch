@@ -19,13 +19,23 @@ set -u
 
 INPUT=$(cat)
 
-_env_url="${BURNWATCH_URL:-}"
-_env_token="${BURNWATCH_TOKEN:-}"
+# Parsed, not sourced: `.` would execute whatever the file contains.
 CONF="${BURNWATCH_CONF:-$HOME/.burnwatch/env}"
-# shellcheck disable=SC1090
-[ -f "$CONF" ] && . "$CONF"
-[ -n "$_env_url" ] && BURNWATCH_URL="$_env_url"
-[ -n "$_env_token" ] && BURNWATCH_TOKEN="$_env_token"
+if [ -f "$CONF" ]; then
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    case "$_line" in '' | '#'*) continue ;; esac
+    _key=${_line%%=*}
+    _val=${_line#*=}
+    case "$_val" in
+      \"*\") _val=${_val#\"}; _val=${_val%\"} ;;
+      \'*\') _val=${_val#\'}; _val=${_val%\'} ;;
+    esac
+    case "$_key" in
+      BURNWATCH_URL) [ -z "${BURNWATCH_URL:-}" ] && BURNWATCH_URL=$_val ;;
+      BURNWATCH_TOKEN) [ -z "${BURNWATCH_TOKEN:-}" ] && BURNWATCH_TOKEN=$_val ;;
+    esac
+  done < "$CONF"
+fi
 
 : "${BURNWATCH_URL:=http://127.0.0.1:8787}"
 : "${BURNWATCH_TOKEN:=}"
@@ -43,12 +53,23 @@ fi
 
 # Detached, like the status-line collector: a hook that blocks delays the
 # thing it is attached to, and a heartbeat is never worth that.
+# Credential via a private config file, never on the command line: on Linux
+# /proc/<pid>/cmdline is world-readable.
+CURLRC="$(dirname "$CONF")/curlrc"
+if [ -n "$BURNWATCH_TOKEN" ]; then
+  (
+    umask 077
+    mkdir -p "$(dirname "$CURLRC")"
+    printf 'header = "authorization: Bearer %s"\n' "$BURNWATCH_TOKEN" > "$CURLRC"
+  )
+fi
+
 if [ -n "$PAYLOAD" ]; then
   (
     printf '%s' "$PAYLOAD" | curl -sS -m 2 \
+      --config "$CURLRC" \
       -X POST "$BURNWATCH_URL/ingest" \
       -H 'content-type: application/json' \
-      -H "authorization: Bearer $BURNWATCH_TOKEN" \
       -H "x-burnwatch-host: $HOST" \
       --data-binary @- >/dev/null 2>&1 &
   ) >/dev/null 2>&1

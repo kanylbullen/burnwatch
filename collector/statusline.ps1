@@ -84,13 +84,21 @@ if (-not $skip) {
   $tmp = Join-Path $env:TEMP ("burnwatch-" + ($sid -replace '[^a-zA-Z0-9\-]', '') + ".json")
   [IO.File]::WriteAllText($tmp, $trimmed, (New-Object System.Text.UTF8Encoding $false))
 
+  # The credential goes in a file, not on curl's command line, so it does not
+  # sit in the process list for anything that can read another process's
+  # arguments.
+  $rc = Join-Path $env:TEMP 'burnwatch-curlrc'
+  if ($token) {
+    [IO.File]::WriteAllText($rc, "header = `"authorization: Bearer $token`"`n")
+  }
+
   $args = @(
     '-sS', '-f', '-m', '2', '-X', 'POST', "$url/ingest",
     '-H', 'content-type: application/json',
     '-H', "x-burnwatch-host: $env:COMPUTERNAME",
     '--data-binary', "@$tmp"
   )
-  if ($token) { $args += @('-H', "authorization: Bearer $token") }
+  if ($token) { $args += @('--config', $rc) }
 
   & curl.exe @args 2>$null | Out-Null
   # -f turns an HTTP 4xx/5xx into a non-zero exit, so a wrong token trips the

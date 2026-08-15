@@ -106,22 +106,45 @@ async function ingest(
 ): Promise<Response> {
   const now = Math.floor(Date.now() / 1000);
   const store = new Store(env.DB);
+
+  // Everything here is attacker-controlled the moment a write token leaks, and
+  // an absurd reset date is not merely untidy: the current window is whichever
+  // reaches furthest into the future, so one reading dated years out hides
+  // every real one until somebody deletes the row by hand.
   const host = (req.headers.get("x-burnwatch-host") ?? "").slice(0, 64);
-  const sessionId = body.session_id ?? null;
-  const model = body.model?.id ?? body.model?.display_name ?? null;
+  const sessionId = (body.session_id ?? "").slice(0, 128) || null;
+  const model =
+    (body.model?.id ?? body.model?.display_name ?? "").slice(0, 128) || null;
 
   const statements = [store.beatStatement(host, sessionId, now, model)];
 
   const limits = body.rate_limits;
+  let rejected = 0;
   for (const key of WINDOW_KEYS) {
     const w = limits?.[key];
     if (
       !w ||
       typeof w.used_percentage !== "number" ||
-      typeof w.resets_at !== "number"
+      typeof w.resets_at !== "number" ||
+      !Number.isFinite(w.used_percentage) ||
+      !Number.isFinite(w.resets_at)
     ) {
       continue;
     }
+
+    // A reset belongs inside its own window, give or take a day of clock skew.
+    // Anything further out is not a reading this endpoint can have produced.
+    const earliest = now - WINDOW_LENGTH[key];
+    const latest = now + WINDOW_LENGTH[key] + 86400;
+    if (w.resets_at < earliest || w.resets_at > latest) {
+      rejected++;
+      continue;
+    }
+    if (w.used_percentage < 0 || w.used_percentage > 100) {
+      rejected++;
+      continue;
+    }
+
     statements.push(
       store.insertStatement({
         ts: now,
@@ -146,6 +169,7 @@ async function ingest(
   return json({
     ok: true,
     recorded,
+    ...(rejected ? { rejected } : {}),
     ...(limits ? {} : { reason: "no rate_limits in payload" }),
   });
 }

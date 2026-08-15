@@ -16,13 +16,24 @@ INPUT=$(cat)
 # Config comes from ~/.burnwatch/env so a new machine needs one file copied and
 # no shell profile touched. Anything already exported still wins, which keeps
 # one-off overrides possible when testing against a second daemon.
-_env_url="${BURNWATCH_URL:-}"
-_env_token="${BURNWATCH_TOKEN:-}"
+# Parsed, not sourced. `.` executes the file, so a stray command in a config
+# nobody thinks of as code would run on every status-line render, as you.
 CONF="${BURNWATCH_CONF:-$HOME/.burnwatch/env}"
-# shellcheck disable=SC1090
-[ -f "$CONF" ] && . "$CONF"
-[ -n "$_env_url" ] && BURNWATCH_URL="$_env_url"
-[ -n "$_env_token" ] && BURNWATCH_TOKEN="$_env_token"
+if [ -f "$CONF" ]; then
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    case "$_line" in '' | '#'*) continue ;; esac
+    _key=${_line%%=*}
+    _val=${_line#*=}
+    case "$_val" in
+      \"*\") _val=${_val#\"}; _val=${_val%\"} ;;
+      \'*\') _val=${_val#\'}; _val=${_val%\'} ;;
+    esac
+    case "$_key" in
+      BURNWATCH_URL) [ -z "${BURNWATCH_URL:-}" ] && BURNWATCH_URL=$_val ;;
+      BURNWATCH_TOKEN) [ -z "${BURNWATCH_TOKEN:-}" ] && BURNWATCH_TOKEN=$_val ;;
+    esac
+  done < "$CONF"
+fi
 
 : "${BURNWATCH_URL:=http://127.0.0.1:8787}"
 : "${BURNWATCH_TOKEN:=}"
@@ -60,13 +71,25 @@ fi
 # The background job leaves its outcome in $STATUS, because otherwise this
 # collector has no failure signal whatsoever: misconfigure it and it reports
 # nothing, forever, while printing a perfectly healthy status line.
+# The credential goes in a private file, never on curl's command line.
+# /proc/<pid>/cmdline is world-readable on Linux, so `-H "authorization: ..."`
+# hands the token to anyone who runs ps at the right moment.
+CURLRC="$(dirname "$CONF")/curlrc"
+if [ -n "$BURNWATCH_TOKEN" ]; then
+  (
+    umask 077
+    mkdir -p "$(dirname "$CURLRC")"
+    printf 'header = "authorization: Bearer %s"\n' "$BURNWATCH_TOKEN" > "$CURLRC"
+  )
+fi
+
 if [ -n "$PAYLOAD" ]; then
   (
     {
       printf '%s' "$PAYLOAD" | curl -sS -m 2 \
+        --config "$CURLRC" \
         -X POST "$BURNWATCH_URL/ingest" \
         -H 'content-type: application/json' \
-        -H "authorization: Bearer $BURNWATCH_TOKEN" \
         -H "x-burnwatch-host: $HOST" \
         --data-binary @- >/dev/null 2>&1
       printf '%s exit=%s url=%s/ingest\n' \
