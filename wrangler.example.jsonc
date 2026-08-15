@@ -31,7 +31,7 @@
   // Retention runs nightly instead of on the ingest path, where it would put a
   // full-table scan in front of every status-line render on every machine.
   "triggers": {
-    "crons": ["17 4 * * *"]
+    "crons": ["*/15 * * * *", "17 4 * * *"]
   },
 
   "vars": {

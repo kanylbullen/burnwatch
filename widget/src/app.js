@@ -25,15 +25,21 @@ const set = (name, value) => {
 
 const pct = (n) => (n == null ? "—" : `${Math.round(n)}%`);
 
-/** Coarse duration: the two largest units that carry information. */
+/**
+ * Coarse duration: the two largest units that carry information.
+ *
+ * A zero second unit is dropped rather than printed. "21H 0M EARLY" is both
+ * noise and long enough to wrap the forecast headline onto two lines, where
+ * "21H EARLY" says the same thing and fits.
+ */
 function dur(s) {
   if (s == null) return "—";
   s = Math.max(0, Math.round(s));
   const d = Math.floor(s / 86400);
   const h = Math.floor((s % 86400) / 3600);
   const m = Math.floor((s % 3600) / 60);
-  if (d > 0) return `${d}D ${h}H`;
-  if (h > 0) return `${h}H ${m}M`;
+  if (d > 0) return h > 0 ? `${d}D ${h}H` : `${d}D`;
+  if (h > 0) return m > 0 ? `${h}H ${m}M` : `${h}H`;
   return `${m}M`;
 }
 
@@ -281,6 +287,95 @@ addEventListener("mousedown", (e) => {
 /* ---------- polling ---------- */
 
 /*
+ * Canned states, reachable as ?fixture=<name>.
+ *
+ * Every one of these is a real state the widget has to render but that is
+ * awkward to produce on demand — you cannot make a window expire, or run dry,
+ * or gather ten machines, just because you want to look at it. Two layout bugs
+ * shipped precisely because they only appeared in states nobody had thought to
+ * look at: an em dash set at hero size rendered as a white slab, and one long
+ * time-zone name pushed a whole card outside the window.
+ */
+const H = 3600;
+const FIXTURES = {
+  empty: () => ({ hosts: [], active_sessions: 0, last_contact_s: null, windows: { five_hour: null, seven_day: null } }),
+  speed_up: (t) => ({
+    hosts: [{ name: "desktop", last_seen_s: 3, active: true }],
+    active_sessions: 2,
+    last_contact_s: 3,
+    windows: {
+      five_hour: win(t, 12, 3 * H, 5 * H, { verdict: "speed_up", speed_up_x: 2.4, rate: 2.9, required: 7.1, used_today: 12 }),
+      seven_day: win(t, 23, 47 * H, 7 * 24 * H, { verdict: "speed_up", speed_up_x: 7.9, rate: 0.21, required: 1.64, used_today: 5 }),
+    },
+  }),
+  runs_out: (t) => ({
+    hosts: [{ name: "desktop", last_seen_s: 8, active: true }],
+    active_sessions: 1,
+    last_contact_s: 8,
+    windows: {
+      five_hour: win(t, 78, 2 * H, 5 * H, { verdict: "runs_out", runs_out_at: t + 1500, early_by_s: 5700, rate: 39, required: 11, used_today: 78 }),
+      seven_day: win(t, 84, 30 * H, 7 * 24 * H, { verdict: "runs_out", runs_out_at: t + 9 * H, early_by_s: 21 * H, rate: 1.8, required: 0.53, used_today: 22 }),
+    },
+  }),
+  maxed: (t) => ({
+    hosts: [{ name: "desktop", last_seen_s: 5, active: true }],
+    active_sessions: 1,
+    last_contact_s: 5,
+    windows: {
+      five_hour: win(t, 100, 90 * 60, 5 * H, { verdict: "runs_out", runs_out_at: t, early_by_s: 0, rate: 30, required: 0, used_today: 100 }),
+      seven_day: win(t, 96, 40 * H, 7 * 24 * H, { verdict: "runs_out", runs_out_at: t + 2 * H, early_by_s: 38 * H, rate: 2, required: 0.1, used_today: 40 }),
+    },
+  }),
+  on_pace: (t) => ({
+    hosts: [{ name: "desktop", last_seen_s: 2, active: true }],
+    active_sessions: 1,
+    last_contact_s: 2,
+    windows: {
+      five_hour: win(t, 44, 3 * H, 5 * H, { verdict: "on_pace", rate: 18.6, required: 18.7, used_today: 44 }),
+      seven_day: win(t, 51, 80 * H, 7 * 24 * H, { verdict: "on_pace", rate: 0.61, required: 0.61, used_today: 9 }),
+    },
+  }),
+  stale: (t) => ({
+    hosts: [{ name: "laptop", last_seen_s: 4 * H, active: false }],
+    active_sessions: 0,
+    last_contact_s: 4 * H,
+    windows: {
+      five_hour: null,
+      seven_day: win(t, 61, 20 * H, 7 * 24 * H, { verdict: "speed_up", speed_up_x: 3.1, rate: 0.6, required: 1.95, used_today: null }),
+    },
+  }),
+  hosts: (t) => ({
+    hosts: ["desktop", "laptop", "build-01", "build-02", "nuc", "mac-studio", "vm-kali", "pi", "server-a", "server-b"]
+      .map((name, i) => ({ name, last_seen_s: i * 400, active: i < 2 })),
+    active_sessions: 2,
+    last_contact_s: 0,
+    windows: {
+      five_hour: win(t, 33, 4 * H, 5 * H, { verdict: "speed_up", speed_up_x: 1.8, rate: 8, required: 14.4, used_today: 33 }),
+      seven_day: win(t, 47, 60 * H, 7 * 24 * H, { verdict: "speed_up", speed_up_x: 1.4, rate: 0.63, required: 0.88, used_today: 11 }),
+    },
+  }),
+};
+
+function win(now, pct, resetsInS, lengthS, o) {
+  return {
+    pct,
+    resets_at: now + resetsInS,
+    resets_in_s: resetsInS,
+    window_length_s: lengthS,
+    rate_pct_per_h: o.rate,
+    required_pct_per_h: o.required,
+    pace_ratio: o.required ? o.rate / o.required : 0,
+    verdict: o.verdict,
+    speed_up_x: o.speed_up_x ?? null,
+    runs_out_at: o.runs_out_at ?? null,
+    early_by_s: o.early_by_s ?? null,
+    used_today_pct: o.used_today ?? null,
+    samples: 120,
+    last_change_s: 30,
+  };
+}
+
+/*
  * Two ways in, one codebase. Served by the daemon it is same-origin and the
  * token rides in the page URL; inside the Tauri shell the same files are
  * bundled locally and the host injects the daemon's address and credential.
@@ -292,7 +387,20 @@ const endpoint = `${base}/api/state${
   token ? `?token=${encodeURIComponent(token)}` : ""
 }`;
 
+const fixture = params.get("fixture");
+
 async function tick() {
+  if (fixture) {
+    const build = FIXTURES[fixture];
+    errorEl.hidden = Boolean(build);
+    if (!build) {
+      errorEl.textContent = `NO SUCH FIXTURE — ${Object.keys(FIXTURES).join(", ")}`;
+      return;
+    }
+    paint({ ok: true, now: Math.floor(Date.now() / 1000), tz: "Europe/Stockholm", ...build(Math.floor(Date.now() / 1000)) });
+    return;
+  }
+
   try {
     const res = await fetch(endpoint, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

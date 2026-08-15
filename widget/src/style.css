@@ -252,11 +252,16 @@ b.accent {
   margin-top: 0;
 }
 
+/* One line, always. A wrapped headline pushes the second forecast off the card,
+   and these strings vary a lot in length: "ON PACE" against "2D 4H EARLY". */
 .verdict {
   font-size: calc(var(--u) * 13);
   line-height: 1;
   margin-top: calc(var(--u) * 1.5);
   font-stretch: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
 }
 
 .verdict.small {

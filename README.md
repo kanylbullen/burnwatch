@@ -119,9 +119,15 @@ the Cloudflare dashboard or a `routes` entry in `wrangler.jsonc`.
 The collector prints a normal status line — `Opus 5 · myproject · 5h 41% ·
 7d 24%` — and reports in the background.
 
-Both collectors require **curl**. It ships with Windows 10+ and with most Linux
-distributions. On Linux and macOS, `jq` is used only to format the status-line
-text; reporting works without it.
+Both collectors require **curl**, and the POSIX one also requires **jq**, which
+it uses to cut the payload down before anything leaves the machine.
+
+Only three fields are sent: the session id, the model, and the rate-limit
+block. Claude Code's status-line payload also carries the transcript path, your
+working and project directories, the git remote's owner and repository, open
+pull request numbers and URLs, and agent and session names — none of which is
+needed to compute a percentage, and all of which used to be forwarded verbatim
+to whoever hosts the endpoint.
 
 ### Linux / macOS
 
@@ -171,6 +177,37 @@ until it recovers. A small compiled collector is on the roadmap for this reason.
 
 Claude Code reads `statusLine` at startup, so **restart any running session**
 before expecting data.
+
+## Polling, for the machines a collector cannot reach
+
+Collectors only fire in terminal sessions. IDE extensions, phones, and any
+machine you never set up stay invisible — see [Gotchas](#gotchas).
+
+An optional poller closes that gap entirely. The account's rate limits come
+back as response headers on any ordinary API request, so the Worker makes a
+deliberately tiny one on a schedule and reads them off:
+
+```
+anthropic-ratelimit-unified-7d-utilization: 0.04
+anthropic-ratelimit-unified-7d-reset: 1787263200
+```
+
+Because the reading is account-wide, one poll covers every device you own.
+Enable it with a token from `claude setup-token`:
+
+```bash
+npx wrangler secret put ANTHROPIC_TOKEN
+```
+
+Without that secret the Worker simply skips the poll, and burnwatch runs on
+collectors alone.
+
+Three things to weigh. The request costs a single output token, so the meter
+nudges what it measures. The token can run inference as well as report
+limits, so a compromised Worker means more than leaked percentages — keep it
+somewhere you would keep an API key. And the headers, unlike the status-line
+payload, are not a documented interface: if they change, polling stops and the
+collectors carry on.
 
 ## The widget
 
@@ -384,6 +421,13 @@ zero-pace case and time-zone handling. `widget/src/app.js` is the reference
 implementation for anyone writing another client — it consumes exactly the
 payload documented above.
 
+**Fixtures.** Append `?fixture=<name>` to the widget URL to render a canned
+state without touching the database: `empty`, `speed_up`, `on_pace`,
+`runs_out`, `maxed`, `stale`, `hosts`. You cannot make a window expire, or run
+dry, or gather ten machines on demand, and two layout bugs shipped precisely
+because those states were never looked at. Combine with `&page=2&norotate=1` to
+pin one card.
+
 ## Roadmap
 
 - **ESP32-S3 firmware.** The original inspiration. `/api/state` is the
@@ -394,6 +438,14 @@ payload documented above.
   compiled binary would be ~5 ms.
 - **Alerts.** Right now you have to look at the widget to learn you are about to
   run out.
+
+## Credits
+
+The idea came from [VibePulse](https://github.com/niclasvestlund-YT/vibepulse)
+by Niclas Vestlund — an ESP32-S3 panel showing the same thing on a desk, and
+the reason this exists at all. The header-polling technique above is taken
+directly from its token server, which solved a coverage problem this project
+had given up on. Also MIT.
 
 ## License
 

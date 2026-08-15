@@ -65,12 +65,24 @@ if (Test-Path $breaker) {
 }
 
 if (-not $skip) {
+  # Only the three fields the server actually uses ever leave this machine.
+  #
+  # The status-line payload also carries the transcript path, the working and
+  # project directories, the git remote's owner and repository, open pull
+  # request numbers and URLs, agent and session names. None of that is needed
+  # to compute a percentage, so none of it is sent.
+  $trimmed = [ordered]@{
+    session_id  = $payload.session_id
+    model       = [ordered]@{ id = $payload.model.id; display_name = $payload.model.display_name }
+    rate_limits = $payload.rate_limits
+  } | ConvertTo-Json -Depth 6 -Compress
+
   # Written as a file rather than piped: PowerShell 5.1 pipes to native
   # commands using $OutputEncoding, which defaults to ASCII and would mangle
-  # any non-ASCII path in the payload.
+  # any non-ASCII content in the payload.
   $sid = if ($payload.session_id) { $payload.session_id } else { 'default' }
   $tmp = Join-Path $env:TEMP ("burnwatch-" + ($sid -replace '[^a-zA-Z0-9\-]', '') + ".json")
-  [IO.File]::WriteAllText($tmp, $raw, (New-Object System.Text.UTF8Encoding $false))
+  [IO.File]::WriteAllText($tmp, $trimmed, (New-Object System.Text.UTF8Encoding $false))
 
   $args = @(
     '-sS', '-f', '-m', '2', '-X', 'POST', "$url/ingest",
