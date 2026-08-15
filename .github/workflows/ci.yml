@@ -50,5 +50,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: widget/src-tauri
-      - name: Check
-        run: cargo check --manifest-path widget/src-tauri/Cargo.toml
+      - name: Check and test
+        run: cargo test --manifest-path widget/src-tauri/Cargo.toml

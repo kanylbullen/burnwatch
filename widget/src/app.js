@@ -211,6 +211,30 @@ function paint(state) {
 
   document.body.dataset.stale =
     contact != null && contact > STALE_S ? "1" : "0";
+
+  paintTray(week, five, tz);
+}
+
+/**
+ * Mirrors the reading onto the tray icon, so the window does not have to be
+ * on screen — or even open — to know where you stand.
+ */
+function paintTray(week, five, tz) {
+  const invoke = globalThis.__TAURI__?.core?.invoke;
+  if (!invoke) return;
+
+  const part = (label, w) =>
+    w == null ? `${label} —` : `${label} ${Math.round(w.pct)}%`;
+  const tail = week
+    ? `  ·  resets in ${dur(week.resets_in_s)}`
+    : "  ·  no current reading";
+
+  invoke("set_tray", {
+    weekly: week ? week.pct : null,
+    tooltip: `${part("7d", week)}   ${part("5h", five)}${tail}`,
+  }).catch(() => {
+    /* The shell may be gone mid-shutdown; the next tick retries. */
+  });
 }
 
 /* ---------- paging ---------- */

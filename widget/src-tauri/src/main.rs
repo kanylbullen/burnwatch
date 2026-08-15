@@ -5,14 +5,140 @@ use std::fs;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{
-    Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder,
-    WindowEvent,
+    AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl,
+    WebviewWindowBuilder, WindowEvent,
 };
 
 const WINDOW_LABEL: &str = "widget";
+const TRAY_ID: &str = "burnwatch";
+
+/// Draws the weekly allowance as a ring, filled clockwise from twelve o'clock.
+///
+/// A tray icon that never changes is just a launcher. This one carries the one
+/// number worth glancing at, with no text: glyphs at 32px are unreadable, and
+/// rendering them would mean bundling a font to say what a filled arc already
+/// says. Above 90% the ring turns red, because that is when you want to notice
+/// it without hovering.
+fn meter_icon(pct: Option<f64>) -> Image<'static> {
+    let (buf, size) = meter_rgba(pct);
+    Image::new_owned(buf, size, size)
+}
+
+fn meter_rgba(pct: Option<f64>) -> (Vec<u8>, u32) {
+    const S: usize = 32;
+    const OUTER: f64 = 15.0;
+    const INNER: f64 = 10.0;
+    const TAU: f64 = std::f64::consts::TAU;
+
+    let centre = (S as f64 - 1.0) / 2.0;
+    let filled = pct.unwrap_or(0.0).clamp(0.0, 100.0) / 100.0;
+    let (fr, fg, fb) = if pct.unwrap_or(0.0) >= 90.0 {
+        (255u8, 45u8, 0u8)
+    } else {
+        (255u8, 75u8, 18u8)
+    };
+
+    let mut buf = vec![0u8; S * S * 4];
+    for y in 0..S {
+        for x in 0..S {
+            let dx = x as f64 - centre;
+            let dy = y as f64 - centre;
+            let dist = dx.hypot(dy);
+            if dist > OUTER + 0.5 || dist < INNER - 0.5 {
+                continue;
+            }
+
+            // Feather the ring's edges so it does not look like a staircase.
+            let edge = (OUTER - dist).min(dist - INNER).clamp(0.0, 1.0);
+
+            let angle = (dx.atan2(-dy) + TAU) % TAU;
+            let (r, g, b, a) = if pct.is_none() {
+                (90u8, 90u8, 100u8, 120u8) // no reading yet
+            } else if angle / TAU <= filled {
+                (fr, fg, fb, 255u8)
+            } else {
+                (111u8, 98u8, 216u8, 90u8) // the unspent remainder
+            };
+
+            let i = (y * S + x) * 4;
+            buf[i] = r;
+            buf[i + 1] = g;
+            buf[i + 2] = b;
+            buf[i + 3] = (a as f64 * edge) as u8;
+        }
+    }
+    (buf, S as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::meter_rgba;
+
+    /// Colour of the ring pixel at a clock position, as (r, g, b).
+    fn at_clock(buf: &[u8], size: u32, fraction: f64) -> (u8, u8, u8) {
+        let s = size as f64;
+        let centre = (s - 1.0) / 2.0;
+        let radius = 12.5;
+        let angle = fraction * std::f64::consts::TAU;
+        let x = (centre + radius * angle.sin()).round() as usize;
+        let y = (centre - radius * angle.cos()).round() as usize;
+        let i = (y * size as usize + x) * 4;
+        (buf[i], buf[i + 1], buf[i + 2])
+    }
+
+    const SPENT: (u8, u8, u8) = (255, 75, 18);
+    const REMAINDER: (u8, u8, u8) = (111, 98, 216);
+
+    #[test]
+    fn fills_clockwise_from_twelve() {
+        let (buf, size) = meter_rgba(Some(50.0));
+        // Quarter past is inside the first half; quarter to is not.
+        assert_eq!(at_clock(&buf, size, 0.25), SPENT);
+        assert_eq!(at_clock(&buf, size, 0.75), REMAINDER);
+    }
+
+    #[test]
+    fn an_almost_empty_ring_is_almost_all_remainder() {
+        let (buf, size) = meter_rgba(Some(5.0));
+        assert_eq!(at_clock(&buf, size, 0.25), REMAINDER);
+        assert_eq!(at_clock(&buf, size, 0.75), REMAINDER);
+    }
+
+    #[test]
+    fn turns_red_only_once_nearly_exhausted() {
+        let (hot, size) = meter_rgba(Some(95.0));
+        assert_eq!(at_clock(&hot, size, 0.25), (255, 45, 0));
+        let (warm, size) = meter_rgba(Some(89.0));
+        assert_eq!(at_clock(&warm, size, 0.25), SPENT);
+    }
+
+    #[test]
+    fn no_reading_is_neither_spent_nor_remaining() {
+        let (buf, size) = meter_rgba(None);
+        assert_eq!(at_clock(&buf, size, 0.25), (90, 90, 100));
+        assert_eq!(at_clock(&buf, size, 0.75), (90, 90, 100));
+    }
+
+    #[test]
+    fn the_centre_stays_transparent() {
+        let (buf, size) = meter_rgba(Some(100.0));
+        let mid = ((size as usize / 2) * size as usize + size as usize / 2) * 4;
+        assert_eq!(buf[mid + 3], 0);
+    }
+}
+
+/// Pushed from the page after each successful reading.
+#[tauri::command]
+fn set_tray(app: AppHandle, weekly: Option<f64>, tooltip: String) {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let _ = tray.set_icon(Some(meter_icon(weekly)));
+        let _ = tray.set_tooltip(Some(&tooltip));
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -83,6 +209,7 @@ fn config_path(app: &tauri::AppHandle) -> PathBuf {
 
 fn main() {
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![set_tray])
         .setup(|app| {
             let cfg_path = config_path(app.handle());
             let settings = Settings::load(&cfg_path);
@@ -132,9 +259,9 @@ fn main() {
 
             // A frameless, taskbar-less window has no other way to be closed or
             // unpinned once it is on screen.
-            TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("burnwatch")
+            TrayIconBuilder::with_id(TRAY_ID)
+                .icon(meter_icon(None))
+                .tooltip("burnwatch — waiting for a reading")
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
