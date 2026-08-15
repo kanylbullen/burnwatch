@@ -322,6 +322,10 @@ without it.
     { "name": "desktop", "last_seen_s": 4, "active": true },
     { "name": "laptop", "last_seen_s": 5400, "active": false }
   ],
+  "poll": {                     // the scheduled poll, or null if it never ran
+    "last_seen_s": 240,
+    "stale": false             // true once it has missed three runs
+  },
   "last_contact_s": 0,          // null until a collector has ever reported
   "windows": {
     "seven_day": {

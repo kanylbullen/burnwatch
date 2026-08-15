@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Sample } from "../core/compute";
 import { config, type WindowKey } from "./config";
+import { POLL_HOST, POLL_STALE_S } from "../core/defaults";
 
 export type IngestSample = {
   ts: number;
@@ -120,6 +121,7 @@ export class Store {
   activity(now: number): {
     sessions: number;
     hosts: { name: string; last_seen_s: number; active: boolean }[];
+    poll: { last_seen_s: number; stale: boolean } | null;
     last_contact_s: number | null;
   } {
     const since = now - config.activeSessionS;
@@ -140,12 +142,16 @@ export class Store {
         last_seen_s: Math.max(0, now - r.ts),
         active: r.ts >= since,
       }));
+    const pollRow = hosts.find((h) => h.name === POLL_HOST);
     const last = this.db
       .query<{ ts: number | null }, []>("SELECT MAX(ts) AS ts FROM heartbeats")
       .get();
     return {
       sessions: row?.n ?? 0,
-      hosts,
+      hosts: hosts.filter((h) => h.name !== POLL_HOST),
+      poll: pollRow
+        ? { last_seen_s: pollRow.last_seen_s, stale: pollRow.last_seen_s > POLL_STALE_S }
+        : null,
       last_contact_s: last?.ts == null ? null : Math.max(0, now - last.ts),
     };
   }

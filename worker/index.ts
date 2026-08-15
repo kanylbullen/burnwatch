@@ -168,6 +168,7 @@ async function state(env: Env): Promise<Response> {
     tz: cfg.timeZone,
     active_sessions: act.sessions,
     hosts: act.hosts,
+    poll: act.poll,
     last_contact_s: act.last_contact_s,
     windows,
   });

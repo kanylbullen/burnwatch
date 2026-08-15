@@ -115,6 +115,7 @@ function state(): Response {
     tz: config.timeZone,
     active_sessions: act.sessions,
     hosts: act.hosts,
+    poll: act.poll,
     last_contact_s: act.last_contact_s,
     windows,
   });

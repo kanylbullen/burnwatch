@@ -179,6 +179,21 @@ function paint(state) {
   // read the wall-clock times on the forecast card.
   set("tz", utcOffset(tz));
 
+  // The scheduled poll is infrastructure, not somewhere you sit: listing it
+  // beside your laptops is noise, while its silence is the one thing about it
+  // worth saying. The server marks it separately so this needs no name check.
+  const poll = el("poll");
+  if (poll) {
+    const p = state.poll;
+    const broken = !p || p.stale;
+    poll.classList.toggle("warn", broken);
+    poll.textContent = !p
+      ? "POLL HAS NEVER RUN"
+      : p.stale
+        ? `POLL SILENT ${dur(p.last_seen_s)}`
+        : `POLL OK ${dur(p.last_seen_s)} AGO`;
+  }
+
   const hosts = el("hosts");
   if (hosts) {
     const list = state.hosts ?? [];
@@ -322,11 +337,12 @@ addEventListener("mousedown", (e) => {
  */
 const H = 3600;
 const FIXTURES = {
-  empty: () => ({ hosts: [], active_sessions: 0, last_contact_s: null, windows: { five_hour: null, seven_day: null } }),
+  empty: () => ({ hosts: [], active_sessions: 0, last_contact_s: null, poll: null, windows: { five_hour: null, seven_day: null } }),
   speed_up: (t) => ({
     hosts: [{ name: "desktop", last_seen_s: 3, active: true }],
     active_sessions: 2,
     last_contact_s: 3,
+    poll: { last_seen_s: 240, stale: false },
     windows: {
       five_hour: win(t, 12, 3 * H, 5 * H, { verdict: "speed_up", speed_up_x: 2.4, rate: 2.9, required: 7.1, used_today: 12 }),
       seven_day: win(t, 23, 47 * H, 7 * 24 * H, { verdict: "speed_up", speed_up_x: 7.9, rate: 0.21, required: 1.64, used_today: 5 }),
@@ -336,6 +352,7 @@ const FIXTURES = {
     hosts: [{ name: "desktop", last_seen_s: 8, active: true }],
     active_sessions: 1,
     last_contact_s: 8,
+    poll: { last_seen_s: 240, stale: false },
     windows: {
       five_hour: win(t, 78, 2 * H, 5 * H, { verdict: "runs_out", runs_out_at: t + 1500, early_by_s: 5700, rate: 39, required: 11, used_today: 78 }),
       seven_day: win(t, 84, 30 * H, 7 * 24 * H, { verdict: "runs_out", runs_out_at: t + 9 * H, early_by_s: 21 * H, rate: 1.8, required: 0.53, used_today: 22 }),
@@ -345,6 +362,7 @@ const FIXTURES = {
     hosts: [{ name: "desktop", last_seen_s: 5, active: true }],
     active_sessions: 1,
     last_contact_s: 5,
+    poll: { last_seen_s: 240, stale: false },
     windows: {
       five_hour: win(t, 100, 90 * 60, 5 * H, { verdict: "runs_out", runs_out_at: t, early_by_s: 0, rate: 30, required: 0, used_today: 100 }),
       seven_day: win(t, 96, 40 * H, 7 * 24 * H, { verdict: "runs_out", runs_out_at: t + 2 * H, early_by_s: 38 * H, rate: 2, required: 0.1, used_today: 40 }),
@@ -354,6 +372,7 @@ const FIXTURES = {
     hosts: [{ name: "desktop", last_seen_s: 2, active: true }],
     active_sessions: 1,
     last_contact_s: 2,
+    poll: { last_seen_s: 240, stale: false },
     windows: {
       five_hour: win(t, 44, 3 * H, 5 * H, { verdict: "on_pace", rate: 18.6, required: 18.7, used_today: 44 }),
       seven_day: win(t, 51, 80 * H, 7 * 24 * H, { verdict: "on_pace", rate: 0.61, required: 0.61, used_today: 9 }),
@@ -363,6 +382,7 @@ const FIXTURES = {
     hosts: [{ name: "laptop", last_seen_s: 4 * H, active: false }],
     active_sessions: 0,
     last_contact_s: 4 * H,
+    poll: { last_seen_s: 3 * H, stale: true },
     windows: {
       five_hour: null,
       seven_day: win(t, 61, 20 * H, 7 * 24 * H, { verdict: "speed_up", speed_up_x: 3.1, rate: 0.6, required: 1.95, used_today: null }),
@@ -373,6 +393,7 @@ const FIXTURES = {
       .map((name, i) => ({ name, last_seen_s: i * 400, active: i < 2 })),
     active_sessions: 2,
     last_contact_s: 0,
+    poll: { last_seen_s: 240, stale: false },
     windows: {
       five_hour: win(t, 33, 4 * H, 5 * H, { verdict: "speed_up", speed_up_x: 1.8, rate: 8, required: 14.4, used_today: 33 }),
       seven_day: win(t, 47, 60 * H, 7 * 24 * H, { verdict: "speed_up", speed_up_x: 1.4, rate: 0.63, required: 0.88, used_today: 11 }),

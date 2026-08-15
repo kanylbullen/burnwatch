@@ -336,6 +336,20 @@ b.accent {
   background: #43434d;
 }
 
+/* Quiet when the poll is healthy, loud when it is not: this line exists to be
+   noticed on the day it changes, not to be read every day. */
+.poll {
+  margin-top: calc(var(--u) * 2);
+  font-size: calc(var(--u) * 3.6);
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.poll.warn {
+  color: var(--accent);
+}
+
 /* ---------- paging dots ---------- */
 
 .dots {

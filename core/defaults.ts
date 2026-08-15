@@ -19,6 +19,22 @@ export const WINDOW_LENGTH: Record<WindowKey, number> = {
   seven_day: 7 * 24 * H,
 };
 
+/**
+ * Host name the scheduled poll reports under.
+ *
+ * It is reported like a machine because that is how the store works, but it is
+ * not one, so clients list it separately: seeing it among your laptops is
+ * noise, while not seeing it at all is the thing worth knowing.
+ */
+export const POLL_HOST = "cloudflare";
+
+/**
+ * How long the poll may be silent before it counts as broken. The cron runs
+ * quarter-hourly, so this tolerates three missed runs rather than flapping on
+ * one.
+ */
+export const POLL_STALE_S = 45 * 60;
+
 export const DEFAULTS = {
   timeZone: "Europe/Stockholm",
 

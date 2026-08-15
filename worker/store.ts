@@ -1,5 +1,5 @@
 import type { Sample } from "../core/compute";
-import type { WindowKey } from "../core/defaults";
+import { POLL_HOST, POLL_STALE_S, type WindowKey } from "../core/defaults";
 
 export type IngestSample = {
   ts: number;
@@ -13,7 +13,10 @@ export type IngestSample = {
 
 export type Activity = {
   sessions: number;
+  /** Machines only. The scheduled poll is reported separately, as `poll`. */
   hosts: { name: string; last_seen_s: number; active: boolean }[];
+  /** null when the poll has never run at all. */
+  poll: { last_seen_s: number; stale: boolean } | null;
   last_contact_s: number | null;
 };
 
@@ -98,13 +101,23 @@ export class Store {
     const hostRows = (hosts.results ?? []) as { host: string; ts: number }[];
     const lastTs = ((last.results ?? [])[0] as { ts: number | null })?.ts ?? null;
 
+    const pollRow = hostRows.find((r) => r.host === POLL_HOST);
+
     return {
       sessions: ((sessions.results ?? [])[0] as { n: number })?.n ?? 0,
-      hosts: hostRows.map((r) => ({
-        name: r.host,
-        last_seen_s: Math.max(0, now - r.ts),
-        active: r.ts >= since,
-      })),
+      hosts: hostRows
+        .filter((r) => r.host !== POLL_HOST)
+        .map((r) => ({
+          name: r.host,
+          last_seen_s: Math.max(0, now - r.ts),
+          active: r.ts >= since,
+        })),
+      poll: pollRow
+        ? {
+            last_seen_s: Math.max(0, now - pollRow.ts),
+            stale: now - pollRow.ts > POLL_STALE_S,
+          }
+        : null,
       last_contact_s: lastTs === null ? null : Math.max(0, now - lastTs),
     };
   }
