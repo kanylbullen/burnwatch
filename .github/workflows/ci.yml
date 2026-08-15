@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# Read-only is all any job here needs: they check out, build and test. The
+# default token is broader than that, and a compromised dependency in a build
+# step would inherit whatever it is given.
+permissions:
+  contents: read
+
 jobs:
   core:
     name: Forecast maths and types

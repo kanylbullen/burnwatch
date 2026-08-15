@@ -415,12 +415,16 @@ const fixture = params.get("fixture");
 
 async function tick() {
   if (fixture) {
-    const build = FIXTURES[fixture];
-    errorEl.hidden = Boolean(build);
-    if (!build) {
+    // hasOwn, not a bare lookup: the name comes from the query string, and a
+    // plain object inherits callable properties. ?fixture=constructor resolves
+    // to Object.constructor, passes a truthiness check, and then gets invoked.
+    if (!Object.hasOwn(FIXTURES, fixture)) {
+      errorEl.hidden = false;
       errorEl.textContent = `NO SUCH FIXTURE — ${Object.keys(FIXTURES).join(", ")}`;
       return;
     }
+    const build = FIXTURES[fixture];
+    errorEl.hidden = true;
     paint({ ok: true, now: Math.floor(Date.now() / 1000), tz: "Europe/Stockholm", ...build(Math.floor(Date.now() / 1000)) });
     return;
   }
