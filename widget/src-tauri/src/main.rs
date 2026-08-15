@@ -234,7 +234,11 @@ fn main() {
                     .min_inner_size(180.0, 180.0)
                     .resizable(true)
                     .decorations(false)
-                    .transparent(true)
+                    // Deliberately not transparent. The page paints an opaque
+                    // black panel edge to edge, so there is nothing to see
+                    // through — and on macOS the builder only offers
+                    // `transparent` behind Tauri's macos-private-api feature,
+                    // which is a lot of coupling for an unused effect.
                     .always_on_top(settings.always_on_top)
                     .skip_taskbar(true)
                     .shadow(false)
