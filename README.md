@@ -225,14 +225,27 @@ cd widget/src-tauri
 cargo build --release
 ```
 
-Building needs Rust, plus WebView2 on Windows (preinstalled on Windows 11) or
-`libwebkit2gtk-4.1-dev` and `libsoup-3.0-dev` on Linux. The binary lands in
-`widget/src-tauri/target/release/`.
+Runs on all three desktops, and CI builds and tests it on each. Building needs
+Rust, plus the platform's webview:
+
+| | Requirement |
+|---|---|
+| Windows | WebView2, preinstalled on Windows 11 |
+| macOS | Xcode command line tools |
+| Linux | `libwebkit2gtk-4.1-dev`, `libsoup-3.0-dev`, `libayatana-appindicator3-dev` |
+
+The binary lands in `widget/src-tauri/target/release/`. On Linux the tray icon
+needs a host that shows AppIndicators — KDE and most others do; GNOME needs an
+extension.
 
 Point it at your deployment with the `BURNWATCH_URL` and `BURNWATCH_TOKEN`
-environment variables, or with a `config.json` in the app config directory
-(`%APPDATA%\io.github.kanylbullen.burnwatch\` on Windows, `~/.config/io.github.kanylbullen.burnwatch/`
-on Linux):
+environment variables, or with a `config.json` in the app config directory:
+
+| | Path |
+|---|---|
+| Windows | `%APPDATA%\io.github.kanylbullen.burnwatch\` |
+| macOS | `~/Library/Application Support/io.github.kanylbullen.burnwatch/` |
+| Linux | `~/.config/io.github.kanylbullen.burnwatch/` |
 
 ```json
 {

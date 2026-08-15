@@ -211,6 +211,13 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![set_tray])
         .setup(|app| {
+            // `skip_taskbar` is a no-op on macOS, where the equivalent is the
+            // activation policy: without this the widget takes a Dock slot and
+            // a menu bar of its own, which is not what a always-on-top meter
+            // should do.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             let cfg_path = config_path(app.handle());
             let settings = Settings::load(&cfg_path);
 

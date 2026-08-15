@@ -42,13 +42,25 @@ jobs:
           echo "collector/statusline.ps1 is pure ASCII"
 
   widget:
-    name: Widget shell
-    runs-on: windows-latest
+    name: Widget shell (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: widget/src-tauri
+      # Tauri links against the system webview on Linux; the other two ship one.
+      - name: Linux webview dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf
       - name: Check and test
         run: cargo test --manifest-path widget/src-tauri/Cargo.toml
