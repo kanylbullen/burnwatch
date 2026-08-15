@@ -193,7 +193,14 @@ const PRUNE_CRON = "17 4 * * *";
  * Technique borrowed from Niclas Vestlund's VibePulse (MIT).
  */
 async function poll(env: Env, now: number): Promise<void> {
-  if (!env.ANTHROPIC_TOKEN) return;
+  // Every exit below says why. A poller that fails silently is the same defect
+  // this project spent its whole review removing: something that looks healthy
+  // while reporting nothing, with no way to tell the two apart. Observability
+  // is enabled in wrangler.jsonc, so these lines are retained and queryable.
+  if (!env.ANTHROPIC_TOKEN) {
+    console.log("poll: skipped, ANTHROPIC_TOKEN not set");
+    return;
+  }
 
   let res: Response;
   try {
@@ -211,8 +218,19 @@ async function poll(env: Env, now: number): Promise<void> {
         messages: [{ role: "user", content: "." }],
       }),
     });
-  } catch {
+  } catch (err) {
+    console.error("poll: request failed", String(err));
     return; // Network trouble; the next tick tries again.
+  }
+
+  if (!res.ok) {
+    console.error(
+      "poll: HTTP",
+      res.status,
+      (await res.text().catch(() => "")).slice(0, 200),
+    );
+    // Headers may still carry the limits on some errors, so carry on rather
+    // than return: a 429 still tells you exactly how full the window is.
   }
 
   const store = new Store(env.DB);
@@ -246,9 +264,21 @@ async function poll(env: Env, now: number): Promise<void> {
     );
   }
 
-  if (statements.length === 0) return;
+  if (statements.length === 0) {
+    console.error(
+      "poll: no rate-limit headers on the response;",
+      "seen:",
+      [...res.headers.keys()].filter((h) => h.includes("ratelimit")).join(",") ||
+        "none",
+    );
+    return;
+  }
+
+  // The heartbeat is written only on a successful reading, so a broken poller
+  // never shows up as a live host.
   statements.unshift(store.beatStatement("cloudflare", null, now, null));
   await env.DB.batch(statements);
+  console.log(`poll: recorded ${statements.length - 1} window(s)`);
 }
 
 export default {
