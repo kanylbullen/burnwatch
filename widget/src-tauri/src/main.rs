@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, Submenu};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl,
     WebviewWindowBuilder, WindowEvent,
@@ -156,6 +156,12 @@ struct Settings {
     theme: String,
     /// Background opacity in percent. 100 is solid, 0 leaves only the text.
     opacity: u8,
+    /// Discreet mode: nothing on screen until you ask for it.
+    ///
+    /// The tray ring already carries the number worth glancing at, so the
+    /// window becomes the detail view rather than a permanent fixture. Left
+    /// click summons it, moving focus elsewhere dismisses it again.
+    discreet: bool,
 }
 
 /// The subset the page needs in order to paint itself.
@@ -179,6 +185,7 @@ impl Default for Settings {
             always_on_top: true,
             theme: "dark".into(),
             opacity: 100,
+            discreet: false,
         }
     }
 }
@@ -241,6 +248,7 @@ impl Settings {
         out.always_on_top = self.always_on_top;
         out.theme = self.theme.clone();
         out.opacity = self.opacity;
+        out.discreet = self.discreet;
 
         if let Ok(text) = serde_json::to_string_pretty(&out) {
             if fs::write(path, text).is_ok() {
@@ -328,7 +336,9 @@ fn main() {
             if let (Some(x), Some(y)) = (settings.x, settings.y) {
                 window.set_position(PhysicalPosition::new(x, y))?;
             }
-            window.show()?;
+            if !settings.discreet {
+                window.show()?;
+            }
 
             let pin = CheckMenuItem::with_id(
                 app,
@@ -362,9 +372,19 @@ fn main() {
                 steps.iter().map(|i| i as &dyn IsMenuItem<_>).collect();
             let opacity_menu = Submenu::with_items(app, "Background", true, &step_refs)?;
 
+            let discreet = CheckMenuItem::with_id(
+                app,
+                "discreet",
+                "Discreet (click the tray to peek)",
+                true,
+                settings.discreet,
+                None::<&str>,
+            )?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu =
-                Menu::with_items(app, &[&pin, &theme_menu, &opacity_menu, &quit])?;
+            let menu = Menu::with_items(
+                app,
+                &[&pin, &discreet, &theme_menu, &opacity_menu, &quit],
+            )?;
 
             // The check marks are driven from the saved settings rather than
             // toggled in place, so the menu can never drift out of step with
@@ -373,11 +393,13 @@ fn main() {
                 let pin = pin.clone();
                 let dark = dark.clone();
                 let light = light.clone();
+                let discreet = discreet.clone();
                 let steps = steps.clone();
                 move |s: &Settings| {
                     let _ = pin.set_checked(s.always_on_top);
                     let _ = dark.set_checked(s.theme == "dark");
                     let _ = light.set_checked(s.theme == "light");
+                    let _ = discreet.set_checked(s.discreet);
                     for (item, step) in steps.iter().zip(OPACITY_STEPS) {
                         let _ = item.set_checked(s.opacity == step);
                     }
@@ -390,7 +412,29 @@ fn main() {
                 .icon(meter_icon(None))
                 .tooltip("burnwatch — waiting for a reading")
                 .menu(&menu)
-                .show_menu_on_left_click(true)
+                // Left click is the peek; the menu moves to right click. On
+                // Linux this has no effect: libappindicator exposes a menu and
+                // no click events at all, so the menu stays the only way in.
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, event| {
+                    let TrayIconEvent::Click { button, button_state, .. } = event
+                    else {
+                        return;
+                    };
+                    if button != MouseButton::Left || button_state != MouseButtonState::Up {
+                        return;
+                    }
+                    let app = tray.app_handle();
+                    let Some(w) = app.get_webview_window(WINDOW_LABEL) else {
+                        return;
+                    };
+                    if w.is_visible().unwrap_or(false) {
+                        let _ = w.hide();
+                    } else {
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                })
                 .on_menu_event(move |app, event| {
                     let id = event.id().as_ref().to_string();
                     if id == "quit" {
@@ -405,6 +449,14 @@ fn main() {
                         s.always_on_top = !s.always_on_top;
                         if let Some(w) = app.get_webview_window(WINDOW_LABEL) {
                             let _ = w.set_always_on_top(s.always_on_top);
+                        }
+                    } else if id == "discreet" {
+                        s.discreet = !s.discreet;
+                        if let Some(w) = app.get_webview_window(WINDOW_LABEL) {
+                            // Turning it on takes effect immediately, so the
+                            // setting is a verb rather than a promise about the
+                            // next launch.
+                            let _ = if s.discreet { w.hide() } else { w.show() };
                         }
                     } else if let Some(theme) = id.strip_prefix("theme:") {
                         s.theme = theme.to_string();
@@ -427,6 +479,17 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // In discreet mode, looking away dismisses it. That is what makes
+            // the peek a peek: no second click to put it away, and nothing left
+            // on screen because you got distracted.
+            if let WindowEvent::Focused(false) = event {
+                let path = config_path(window.app_handle());
+                if Settings::load(&path).discreet {
+                    let _ = window.hide();
+                }
+                return;
+            }
+
             // Remember where the widget was parked, and its size.
             let persist = matches!(
                 event,

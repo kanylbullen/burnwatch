@@ -277,9 +277,16 @@ Environment wins over the file. Note that the app rewrites that file whenever
 you move or resize the window, and writes the token into it in plain text — so
 supplying the token by environment does not keep it out of the config directory.
 
-Click to page, drag to move, scroll or arrow keys to navigate, and use the tray
-icon to unpin or quit: a frameless window with no taskbar entry has no other way
-to be closed.
+Click to page, drag to move, scroll or arrow keys to navigate. The tray icon
+carries the weekly ring and a tooltip with both windows; **right click** opens
+the menu — pin, theme, background opacity, discreet mode, quit — since a
+frameless window with no taskbar entry has no other way to be closed.
+
+**Discreet mode** leaves nothing on screen. The tray ring is still the ambient
+signal, and **left clicking it** summons the window until you look away: moving
+focus elsewhere dismisses it, so a peek needs no second click to put away. On
+Linux the peek is unavailable — libappindicator exposes a menu and no click
+events at all — so the menu remains the only way in there.
 
 ## Self-hosting instead
 
