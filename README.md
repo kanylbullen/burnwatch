@@ -234,7 +234,21 @@ https://burnwatch.example.workers.dev/?token=YOUR_TOKEN
 ```
 
 Add `&page=2&norotate=1` to pin one card. For the real thing — frameless,
-always on top, out of the taskbar:
+always on top, out of the taskbar — take an installer from the
+[releases page](https://github.com/kanylbullen/burnwatch/releases): `.msi` or
+`.exe` for Windows, `.dmg` for macOS, `.deb` or `.AppImage` for Linux. CI
+builds them on each platform, so no toolchain is needed on the machine you are
+installing on.
+
+Nothing is code-signed. Windows SmartScreen warns on first run — *More info*,
+then *Run anyway*. macOS refuses outright until you allow it under Privacy &
+Security, or clear the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/burnwatch.app
+```
+
+To build it yourself instead:
 
 ```bash
 cd widget/src-tauri

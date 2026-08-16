@@ -1,0 +1,76 @@
+name: Release
+
+# Installers are built here rather than on each machine, because the
+# alternative is a Rust toolchain and a set of platform libraries on every
+# computer you want the widget on. Push a tag and collect the files.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows (msi, nsis)
+            args: ""
+          - os: macos-latest
+            label: macOS (Apple silicon)
+            args: "--target aarch64-apple-darwin"
+          - os: macos-13
+            label: macOS (Intel)
+            args: "--target x86_64-apple-darwin"
+          - os: ubuntu-22.04
+            label: Linux (deb, AppImage)
+            args: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || matrix.os == 'macos-13' && 'x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: widget/src-tauri
+
+      # Tauri links against the system webview on Linux. 22.04 rather than
+      # newer, because an AppImage built against a given glibc will not run on
+      # anything older.
+      - name: Linux dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: widget
+          tagName: ${{ github.ref_name }}
+          releaseName: burnwatch ${{ github.ref_name }}
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+          releaseBody: |
+            Download the file for your platform, then point it at your
+            deployment — see the widget section of the README.
+
+            Nothing here is code-signed. Windows SmartScreen will warn on first
+            run ("More info" then "Run anyway"), and macOS refuses outright
+            until you allow it under Privacy & Security, or clear the quarantine
+            flag with `xattr -dr com.apple.quarantine /Applications/burnwatch.app`.
