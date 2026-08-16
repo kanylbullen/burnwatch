@@ -276,6 +276,29 @@ impl Settings {
     }
 }
 
+/// Whether this point lies on any attached display.
+///
+/// Checks the top-left corner with a small margin, so a window nudged slightly
+/// off an edge still counts — the case worth catching is a position from an
+/// entirely different monitor layout, not a few pixels of overhang.
+fn on_some_monitor(window: &tauri::WebviewWindow, x: i32, y: i32) -> bool {
+    const MARGIN: i32 = 80;
+    let Ok(monitors) = window.available_monitors() else {
+        return true; // Cannot tell; trust the saved value rather than move it.
+    };
+    if monitors.is_empty() {
+        return true;
+    }
+    monitors.iter().any(|m| {
+        let p = m.position();
+        let s = m.size();
+        x >= p.x - MARGIN
+            && y >= p.y - MARGIN
+            && x < p.x + s.width as i32 + MARGIN
+            && y < p.y + s.height as i32 + MARGIN
+    })
+}
+
 fn config_path(app: &tauri::AppHandle) -> PathBuf {
     app.path()
         .app_config_dir()
@@ -334,7 +357,16 @@ fn main() {
             // the window grew, and walked further off-screen, on every launch.
             window.set_size(PhysicalSize::new(settings.width, settings.height))?;
             if let (Some(x), Some(y)) = (settings.x, settings.y) {
-                window.set_position(PhysicalPosition::new(x, y))?;
+                // Only if that point is actually on a screen. A config copied
+                // from another machine — the obvious way to set up the second
+                // one — carries coordinates from its monitor layout, and this
+                // window is frameless and absent from the taskbar: put it past
+                // the edge and there is nothing left to click.
+                if on_some_monitor(&window, x, y) {
+                    window.set_position(PhysicalPosition::new(x, y))?;
+                } else {
+                    let _ = window.center();
+                }
             }
             if !settings.discreet {
                 window.show()?;
