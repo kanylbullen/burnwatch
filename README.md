@@ -352,8 +352,10 @@ without it.
 A window is `null` before its first sample, and again between its reset and the
 first reading of the window that follows.
 
-`POST /ingest` takes Claude Code's status-line JSON verbatim, with an optional
-`X-Burnwatch-Host` header.
+`POST /ingest` takes Claude Code's status-line JSON, with an optional
+`X-Burnwatch-Host` header, and replies `{ ok, recorded, rejected? }`. A reading
+outside its window, or a percentage outside 0-100, is counted in `rejected`
+rather than stored.
 
 ## Configuration
 
@@ -363,7 +365,8 @@ reads the same names from the environment or from `~/.burnwatch/env`.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `BURNWATCH_TOKEN` | *(unset)* | Worker refuses all requests without it; daemon treats empty as auth-disabled |
+| `BURNWATCH_TOKEN` | *(unset)* | Read and write. Worker refuses all requests without it; daemon treats empty as auth-disabled |
+| `BURNWATCH_READ_TOKEN` | *(unset)* | Optional. `GET /api/state` only — for phones, watches and displays |
 | `BURNWATCH_TZ` | `Europe/Stockholm` | Drives "used today" and displayed clock times |
 | `BURNWATCH_LOOKBACK_7D` | `86400` | Window for measuring weekly pace |
 | `BURNWATCH_LOOKBACK_5H` | `3600` | Window for measuring session pace |
@@ -426,18 +429,49 @@ different problem from one that ran and failed to report.
 
 ## Security
 
-The token is the only thing between the internet and your usage data, so make it
-long and random. Traffic is HTTPS end to end on Cloudflare.
+Traffic is HTTPS end to end on Cloudflare, and the Worker refuses everything
+until a token is set.
 
-For a stronger read side, put Cloudflare Access in front of `/api/state` and the
-widget, and issue a service token for headless clients. That splits reading from
-writing, which a single shared token does not.
+**Two tokens, because reading and writing carry different risk.**
+`BURNWATCH_TOKEN` does both and belongs on machines that report.
+`BURNWATCH_READ_TOKEN` is optional and opens `GET /api/state` alone — put that
+one on a phone, a watch or a display, so losing the device cannot put invented
+readings into your history.
 
-The data is not dramatic — percentages, machine names, session UUIDs — but the
-machine names do describe your fleet.
+**Writes are validated, not trusted.** Percentages must be 0–100, strings are
+capped, and a reset date must fall inside its own window give or take a day of
+clock skew. This matters more than it sounds: the current window is whichever
+reaches furthest into the future, so a single reading dated years out would hide
+every real one until the row was deleted by hand. Rejected readings are counted
+back in the response rather than dropped in silence.
+
+**The token does not stay in the address bar.** Opening the widget as
+`?token=…` would leave the secret in browser history, in any bookmark made from
+that page, and in the host's request log. The page takes it on arrival, keeps
+it in `localStorage`, and rewrites the URL without it; a bare bookmark then
+works on later visits. A stored token the server rejects is cleared, since a
+bad credential in storage cannot be fixed by reopening the page.
+
+The served page carries its own `Content-Security-Policy` and
+`Referrer-Policy: no-referrer` from `widget/src/_headers`, rather than relying
+on the browser's defaults.
+
+**Collectors keep the token off the command line.** `/proc/<pid>/cmdline` is
+world-readable on Linux, so passing `-H "authorization: Bearer …"` to curl hands
+the token to anyone who runs `ps` at the right moment. It goes in a mode-600
+curl config file instead. The config file is parsed rather than sourced, so a
+file nobody thinks of as code cannot execute as you.
+
+**What is not covered.** There is no rate limiting: a leaked write token can
+fill the database. `ANTHROPIC_TOKEN`, if you enable polling, can run inference
+and not merely read limits, so a compromised Worker costs more than leaked
+percentages. The desktop widget writes its token to `config.json` in plain
+text. And the data itself is undramatic — percentages, machine names, session
+ids — but the machine names do describe your fleet.
 
 The self-hosted daemon serves plain HTTP and is only appropriate on a trusted
-network or behind a TLS reverse proxy.
+network or behind a TLS reverse proxy. Leaving its token empty disables
+authentication entirely.
 
 ## Development
 
