@@ -1,0 +1,13 @@
+# Response headers for the browser-served widget.
+#
+# The Tauri shell gets its policy from tauri.conf.json, which covers only that
+# webview — the page served over HTTP had no policy at all, so the protection
+# assumed for it was really just the browser's default referrer behaviour.
+#
+# Cloudflare reads this file as configuration; it is never served.
+
+/*
+  Referrer-Policy: no-referrer
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY

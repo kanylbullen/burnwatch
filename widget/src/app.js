@@ -444,6 +444,62 @@ function applyAppearance(a) {
   }
 }
 
+/**
+ * Resolves the credential without leaving it in the address bar.
+ *
+ * Opening the widget as ?token=… puts the secret into browser history, into
+ * any bookmark made from that page, and into the request log of whoever hosts
+ * it. So the token is taken out of the URL on arrival and kept in
+ * localStorage instead, which keeps a bare bookmark working on later visits.
+ *
+ * localStorage rather than sessionStorage is a deliberate trade: it survives
+ * closing the tab, which is the point, at the cost of sitting on disk for this
+ * origin. On a shared computer, clear it or use the desktop app, which is
+ * handed its token by the shell and never touches storage at all.
+ */
+const TOKEN_KEY = "burnwatch.token";
+
+function tokenStore() {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null; // Storage can be blocked outright; fall back to the URL.
+  }
+}
+
+/** Drops a stored credential the server has refused. */
+function forgetToken() {
+  try {
+    tokenStore()?.removeItem(TOKEN_KEY);
+  } catch {
+    /* Nothing to do: the next load simply asks for a token again. */
+  }
+}
+
+function resolveToken(params) {
+  const store = tokenStore();
+  const KEY = TOKEN_KEY;
+
+  const fromUrl = params.get("token");
+  if (fromUrl) {
+    try {
+      store?.setItem(KEY, fromUrl);
+    } catch {
+      /* Not fatal: this run still has the value in hand. */
+    }
+    params.delete("token");
+    const rest = params.toString();
+    history.replaceState(null, "", location.pathname + (rest ? `?${rest}` : ""));
+    return fromUrl;
+  }
+
+  try {
+    return store?.getItem(KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 const injected = globalThis.__BURNWATCH__ ?? null;
 applyAppearance(injected);
 // Query overrides, so appearance can be inspected in a browser as well as in
@@ -454,7 +510,9 @@ applyAppearance({
 });
 globalThis.__TAURI__?.event?.listen?.("appearance", (e) => applyAppearance(e.payload));
 const base = injected?.url?.replace(/\/+$/, "") ?? "";
-const token = injected?.token ?? params.get("token") ?? "";
+// The shell hands its token over directly; the browser has to be weaned off
+// carrying it in the URL.
+const token = injected?.token || resolveToken(params);
 const endpoint = `${base}/api/state${
   token ? `?token=${encodeURIComponent(token)}` : ""
 }`;
@@ -479,6 +537,13 @@ async function tick() {
 
   try {
     const res = await fetch(endpoint, { cache: "no-store" });
+    if (res.status === 401) {
+      // A stored credential that the server rejects is worse than none: it
+      // cannot be corrected by visiting the page again, only by clearing it,
+      // which is not something the address bar can tell you to do.
+      forgetToken();
+      throw new Error("HTTP 401 — token rejected and cleared, reopen with ?token=");
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     paint(await res.json());
     errorEl.hidden = true;
