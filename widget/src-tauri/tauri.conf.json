@@ -11,7 +11,7 @@
     "macOSPrivateApi": true,
     "windows": [],
     "security": {
-      "csp": "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self' http://*:* https://*:*",
+      "csp": "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:* http://[::1]:*; base-uri 'none'; form-action 'none'",
       "capabilities": ["widget"]
     }
   },

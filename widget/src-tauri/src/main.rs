@@ -214,13 +214,57 @@ impl Settings {
         s
     }
 
+    /// Writes the settings back, without ever *introducing* a secret to disk.
+    ///
+    /// A token supplied through the environment used to be persisted here the
+    /// first time the window moved, so choosing the safer input silently
+    /// produced the less safe storage. Now the file keeps a token only if it
+    /// already had one, and the file is owner-only on Unix.
     fn save(&self, path: &PathBuf) {
         if let Some(dir) = path.parent() {
             let _ = fs::create_dir_all(dir);
         }
-        if let Ok(text) = serde_json::to_string_pretty(self) {
-            let _ = fs::write(path, text);
+
+        let mut out = Settings {
+            token: if Self::file_had_token(path) {
+                self.token.clone()
+            } else {
+                String::new()
+            },
+            ..Settings::default()
+        };
+        out.url = self.url.clone();
+        out.x = self.x;
+        out.y = self.y;
+        out.width = self.width;
+        out.height = self.height;
+        out.always_on_top = self.always_on_top;
+        out.theme = self.theme.clone();
+        out.opacity = self.opacity;
+
+        if let Ok(text) = serde_json::to_string_pretty(&out) {
+            if fs::write(path, text).is_ok() {
+                Self::restrict(path);
+            }
         }
+    }
+
+    fn file_had_token(path: &PathBuf) -> bool {
+        fs::read_to_string(path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<Settings>(&raw).ok())
+            .is_some_and(|s| !s.token.is_empty())
+    }
+
+    #[cfg(unix)]
+    fn restrict(path: &PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+    }
+
+    #[cfg(not(unix))]
+    fn restrict(_path: &PathBuf) {
+        // Windows inherits the user profile's ACL, which is already owner-only.
     }
 }
 

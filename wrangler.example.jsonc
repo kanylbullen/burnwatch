@@ -34,6 +34,24 @@
     "crons": ["*/15 * * * *", "17 4 * * *"]
   },
 
+  // Rate limiting lives here rather than as a dashboard rule, so it ships with
+  // the repository and nobody has to remember to recreate it. A leaked write
+  // token can then cost a burst, not an unbounded database.
+  //
+  // Keyed by source address, which cannot be forged the way a host header can —
+  // but that also means every machine behind one public address shares this
+  // bucket, so the ceiling is set well above what a fleet of status lines does.
+  "unsafe": {
+    "bindings": [
+      {
+        "name": "INGEST_LIMIT",
+        "type": "ratelimit",
+        "namespace_id": "1001",
+        "simple": { "limit": 120, "period": 60 }
+      }
+    ]
+  },
+
   "vars": {
     "BURNWATCH_TZ": "Europe/Stockholm"
   },

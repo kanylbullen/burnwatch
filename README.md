@@ -462,12 +462,19 @@ the token to anyone who runs `ps` at the right moment. It goes in a mode-600
 curl config file instead. The config file is parsed rather than sourced, so a
 file nobody thinks of as code cannot execute as you.
 
-**What is not covered.** There is no rate limiting: a leaked write token can
-fill the database. `ANTHROPIC_TOKEN`, if you enable polling, can run inference
-and not merely read limits, so a compromised Worker costs more than leaked
-percentages. The desktop widget writes its token to `config.json` in plain
-text. And the data itself is undramatic — percentages, machine names, session
-ids — but the machine names do describe your fleet.
+**Writes are rate limited** to 120 a minute per source address, keyed on the
+address rather than the host header because that cannot be forged. Every
+machine behind one public address shares the bucket, so the ceiling sits well
+above what a fleet of status lines produces.
+
+**What is not covered.** `ANTHROPIC_TOKEN`, if you enable polling, is an
+inference credential and not a read-only one — Anthropic issues no narrower
+scope for this, so a compromised Worker costs more than leaked percentages.
+Leave polling off if that trade does not suit you. The desktop widget keeps a
+token in `config.json` if you put one there, owner-only, though it will never
+write one that came from the environment. And the data itself is undramatic —
+percentages, machine names, session ids — but the machine names do describe
+your fleet.
 
 The self-hosted daemon serves plain HTTP and is only appropriate on a trusted
 network or behind a TLS reverse proxy. Leaving its token empty disables

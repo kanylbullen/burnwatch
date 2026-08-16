@@ -22,6 +22,8 @@ export type Env = {
    * machine that never runs a collector.
    */
   ANTHROPIC_TOKEN?: string;
+  /** Cloudflare rate-limit binding; absent in older deployments. */
+  INGEST_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   BURNWATCH_TZ?: string;
   BURNWATCH_LOOKBACK_5H?: string;
   BURNWATCH_LOOKBACK_7D?: string;
@@ -331,6 +333,15 @@ export default {
     }
 
     if (url.pathname === "/ingest" && req.method === "POST") {
+      // Keyed by source address, so one noisy or compromised machine cannot
+      // spend the database on everyone else's behalf. A status line renders
+      // far below this rate even when you are typing continuously.
+      const who = req.headers.get("cf-connecting-ip") ?? "unknown";
+      const gate = await env.INGEST_LIMIT?.limit({ key: who });
+      if (gate && !gate.success) {
+        return json({ ok: false, error: "rate limited" }, 429);
+      }
+
       let body: StatusLinePayload;
       try {
         body = await req.json();
