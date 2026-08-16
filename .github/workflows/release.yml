@@ -24,12 +24,13 @@ jobs:
           - os: windows-latest
             label: Windows (msi, nsis)
             args: ""
+          # One universal binary rather than a job per architecture. The
+          # Intel-native runner is being retired and queues for half an hour or
+          # more; Apple silicon cross-compiles to x86_64 perfectly well, and
+          # users get one download instead of having to know which Mac they own.
           - os: macos-latest
-            label: macOS (Apple silicon)
-            args: "--target aarch64-apple-darwin"
-          - os: macos-13
-            label: macOS (Intel)
-            args: "--target x86_64-apple-darwin"
+            label: macOS (universal)
+            args: "--target universal-apple-darwin"
           - os: ubuntu-22.04
             label: Linux (deb, AppImage)
             args: ""
@@ -39,7 +40,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || matrix.os == 'macos-13' && 'x86_64-apple-darwin' || '' }}
+          targets: ${{ startsWith(matrix.os, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - uses: Swatinem/rust-cache@v2
         with:
