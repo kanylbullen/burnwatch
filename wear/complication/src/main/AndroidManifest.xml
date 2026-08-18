@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature android:name="android.hardware.type.watch" />
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.DeviceDefault">
+
+        <!--
+          The watch reaches the Worker itself over wifi or LTE, so it does not
+          depend on a paired phone and there is no companion app to install.
+        -->
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="true" />
+
+        <activity
+            android:name=".StatusActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          The tile. Unlike a complication it does not depend on a watch face
+          choosing to draw it — it is one swipe from the face and always ours.
+        -->
+        <service
+            android:name=".BurnwatchTileService"
+            android:description="@string/tile_description"
+            android:exported="true"
+            android:icon="@drawable/ic_burnwatch"
+            android:label="@string/app_name"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+            <meta-data
+                android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/ic_launcher_foreground" />
+        </service>
+
+        <!--
+          Two providers, one per window. SUPPORTED_TYPES is deliberately wide:
+          a slot lists only the providers offering a type it accepts, so a
+          narrow declaration is invisible on exactly the watch faces it does
+          not happen to match.
+        -->
+        <service
+            android:name=".WeeklyComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_burnwatch"
+            android:label="@string/weekly_label"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="RANGED_VALUE,SHORT_TEXT,LONG_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="900" />
+        </service>
+
+        <service
+            android:name=".FiveHourComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_burnwatch"
+            android:label="@string/five_hour_label"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="RANGED_VALUE,SHORT_TEXT,LONG_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="900" />
+        </service>
+    </application>
+</manifest>

@@ -10,8 +10,8 @@ at the pace of the last day, do you finish the week with allowance to spare, or
 does it run out on Thursday morning?
 
 > Built after seeing someone put the same idea on an ESP32-S3. It runs on
-> Cloudflare Workers and speaks plain JSON, so the desktop widget here and a
-> future firmware are just two clients of one feed.
+> Cloudflare Workers and speaks plain JSON, so the desktop widget, the Wear OS
+> app and a future firmware are all clients of one feed.
 
 <p align="center">
   <img src="docs/screen-weekly.png" width="240" alt="Weekly allowance: 23% used, +23% today, 1D 22H to reset">
@@ -301,6 +301,35 @@ signal, and **left clicking it** summons the window until you look away: moving
 focus elsewhere dismisses it, so a peek needs no second click to put away. On
 Linux the peek is unavailable — libappindicator exposes a menu and no click
 events at all — so the menu remains the only way in there.
+
+## On the wrist
+
+<p align="center">
+  <img src="docs/wear-tile.png" width="200" alt="The tile: weekly arc filled to 53%, with 5h 9% underneath">
+  <img src="docs/wear-7d.png" width="200" alt="Weekly window: 42% used, resets in 2d 23h, with the arc filled to match">
+  <img src="docs/wear-5h.png" width="200" alt="Five-hour window: 9% used, resets in 3h 46m">
+  <img src="docs/wear-pace.png" width="200" alt="Pace: SPEED UP on both windows, 3.4x and 1.4x current pace to max out">
+  <img src="docs/wear-hosts.png" width="200" alt="Clients: 2 chats active, four hosts listed with how long each has been quiet">
+</p>
+
+A Wear OS app lives in [`wear/`](wear/): two complication providers, a tile,
+and four pages swiped vertically — each window, the verdict, and who is
+reporting. It reads `/api/state` over wifi or LTE without a companion phone
+app, and it is another client of the same feed, so it required no server work
+at all.
+
+The wording is transcribed from the widget rather than reinvented. Two surfaces
+describing one account in different vocabulary would read as two tools that
+disagree.
+
+**Prefer the tile to a complication.** A complication is drawn by whoever
+designed your watch face, and a face is free to bind one, enable it, accept
+correct data and still render nothing — with no way to tell that from the
+wrist. The tile is its own surface, one swipe from the face, and no face can
+opt out of it.
+
+Build and install instructions, including why the APK carries a read-only
+token, are in [`wear/README.md`](wear/README.md).
 
 ## Self-hosting instead
 

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">burnwatch</string>
+
+    <!-- How each provider is named in the watch face's slot picker. -->
+    <string name="weekly_label">burnwatch weekly</string>
+    <string name="five_hour_label">burnwatch 5h</string>
+
+    <string name="tile_description">How much of your Claude Code limit is gone, and whether it lasts.</string>
+
+    <string name="status_loading">reading…</string>
+    <string name="status_unconfigured">No deployment compiled in.\n\nBuild with wear/token.properties filled in.</string>
+    <string name="status_unreachable">No reading from %1$s.\n\nEither the watch is offline or the token is wrong.</string>
+    <string name="status_window_absent">%1$s   nothing reported yet</string>
+    <string name="status_hosts_none">NONE REPORTING</string>
+    <string name="status_fresh">just now</string>
+    <string name="status_cached">cached, %1$s old</string>
+</resources>

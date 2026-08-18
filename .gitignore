@@ -1,5 +1,5 @@
 node_modules/
-widget/src-tauri/target/
+widget/src-tauri/target
 widget/src-tauri/gen/schemas/
 
 # Holds the daemon token.
@@ -17,3 +17,11 @@ build.log
 
 # Holds your own D1 id and hostname. Copy wrangler.example.jsonc to start.
 wrangler.jsonc
+
+# Wear OS build. token.properties is compiled into the APK — never commit it.
+wear/token.properties
+wear/local.properties
+wear/.gradle/
+wear/build/
+wear/*/build/
+wear/.kotlin/

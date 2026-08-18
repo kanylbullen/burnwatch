@@ -1,0 +1,7 @@
+# Copy to token.properties, which is gitignored.
+#
+# Use the READ-ONLY token (BURNWATCH_READ_TOKEN on the Worker), never the one
+# your collectors report with. This value is compiled into the APK, so anyone
+# holding the watch holds the credential — read-only keeps that boring.
+BURNWATCH_URL=https://burnwatch.example.workers.dev
+BURNWATCH_TOKEN=paste-your-read-only-token-here

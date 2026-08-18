@@ -1,0 +1,67 @@
+{
+  "ok": true,
+  "now": 1787000501,
+  "tz": "Europe/Stockholm",
+  "active_sessions": 3,
+  "hosts": [
+    {
+      "name": "laptop",
+      "last_seen_s": 262,
+      "active": true
+    },
+    {
+      "name": "desktop",
+      "last_seen_s": 503,
+      "active": true
+    },
+    {
+      "name": "server",
+      "last_seen_s": 107517,
+      "active": false
+    },
+    {
+      "name": "builder",
+      "last_seen_s": 138919,
+      "active": false
+    }
+  ],
+  "poll": {
+    "last_seen_s": 46,
+    "stale": false
+  },
+  "last_contact_s": 46,
+  "windows": {
+    "five_hour": {
+      "pct": 59,
+      "resets_at": 1787001000,
+      "resets_in_s": 499,
+      "window_length_s": 18000,
+      "rate_pct_per_h": 28.6498,
+      "required_pct_per_h": 295.7916,
+      "pace_ratio": 0.0969,
+      "verdict": "speed_up",
+      "speed_up_x": 10.32,
+      "runs_out_at": null,
+      "early_by_s": null,
+      "used_today_pct": 59,
+      "samples": 17,
+      "last_change_s": 46
+    },
+    "seven_day": {
+      "pct": 40,
+      "resets_at": 1787263200,
+      "resets_in_s": 262699,
+      "window_length_s": 604800,
+      "rate_pct_per_h": 0.525,
+      "required_pct_per_h": 0.8222,
+      "pace_ratio": 0.6385,
+      "verdict": "speed_up",
+      "speed_up_x": 1.57,
+      "runs_out_at": null,
+      "early_by_s": null,
+      "used_today_pct": 12,
+      "samples": 36,
+      "last_change_s": 46
+    }
+  }
+}
