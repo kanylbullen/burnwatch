@@ -101,9 +101,21 @@ adb connect <watch-ip>:<port>
 adb -s <watch-ip>:<port> install -r complication/build/outputs/apk/debug/complication-debug.apk
 ```
 
-Then add the tile — swipe left to the end of the carousel, tap **+** — and, if
-you want a complication too, long-press the watch face → **Customize** → tap a
-slot → pick **burnwatch weekly** or **burnwatch 5h**.
+Then add the tile. With adb already connected there is no reason to go
+hunting for the **+** at the end of the carousel by hand:
+
+```sh
+adb -s <watch-ip>:<port> shell am broadcast \
+  -a com.google.android.wearable.app.DEBUG_SURFACE \
+  --es operation add-tile \
+  --ecn component io.github.kanylbullen.burnwatch.wear/.BurnwatchTileService
+```
+
+It answers `result=1, data="Index=[0]"` — the position the tile landed at,
+counting swipes from the watch face — and `result=0` when it refused.
+
+If you want a complication too, long-press the watch face → **Customize** →
+tap a slot → pick **burnwatch weekly** or **burnwatch 5h**.
 
 Two things about wireless debugging will cost you a session otherwise. **The
 port is not stable**: Wear OS turns wireless debugging off on its own to save
