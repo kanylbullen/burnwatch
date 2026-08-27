@@ -69,12 +69,22 @@ const json = (body: unknown, status = 200) =>
     },
   });
 
-/** Length-independent comparison, so a mismatch leaks neither prefix. */
+/**
+ * Length-independent comparison, so a mismatch leaks neither length nor
+ * prefix: the byte loop runs to the end regardless, and a length mismatch is
+ * folded into the same diff rather than short-circuiting.
+ */
 function sameSecret(given: string, expected: string): boolean {
-  if (expected === "" || given.length !== expected.length) return false;
-  let diff = 0;
-  for (let i = 0; i < given.length; i++) {
-    diff |= given.charCodeAt(i) ^ expected.charCodeAt(i);
+  // An unset expected secret denies everything, whatever the caller sends.
+  if (expected === "") return false;
+  let diff = given.length ^ expected.length;
+  const n = Math.max(given.length, expected.length);
+  for (let i = 0; i < n; i++) {
+    // Bytes past either string's end read as -1 so the loop runs to the end
+    // of the longer string without leaking which side is shorter.
+    const g = i < given.length ? given.charCodeAt(i) : -1;
+    const e = i < expected.length ? expected.charCodeAt(i) : -1;
+    diff |= g ^ e;
   }
   return diff === 0;
 }
