@@ -1,3 +1,8 @@
+/**
+ * The Cloudflare Worker: ingest, state, the scheduled poll, and the widget's
+ * static files.
+ */
+
 import { computeWindow, type WindowState } from "../core/compute";
 import {
   DEFAULTS,
@@ -6,6 +11,11 @@ import {
   num,
   type WindowKey,
 } from "../core/defaults";
+import {
+  identityOf,
+  parseIngest,
+  type StatusLinePayload,
+} from "../core/ingest";
 import { Store } from "./store";
 
 export type Env = {
@@ -29,15 +39,6 @@ export type Env = {
   BURNWATCH_LOOKBACK_7D?: string;
   BURNWATCH_RETENTION_S?: string;
   BURNWATCH_ACTIVE_SESSION_S?: string;
-};
-
-/** Shape of the slice of Claude Code's status-line JSON that we care about. */
-type StatusLinePayload = {
-  session_id?: string;
-  model?: { id?: string; display_name?: string };
-  rate_limits?: Partial<
-    Record<WindowKey, { used_percentage?: number; resets_at?: number }>
-  >;
 };
 
 function settings(env: Env) {
@@ -68,7 +69,7 @@ const json = (body: unknown, status = 200) =>
     },
   });
 
-/** Length-independent comparison, so a mismatch leaks neither size nor prefix. */
+/** Length-independent comparison, so a mismatch leaks neither prefix. */
 function sameSecret(given: string, expected: string): boolean {
   if (expected === "" || given.length !== expected.length) return false;
   let diff = 0;
@@ -109,55 +110,23 @@ async function ingest(
   const now = Math.floor(Date.now() / 1000);
   const store = new Store(env.DB);
 
-  // Everything here is attacker-controlled the moment a write token leaks, and
-  // an absurd reset date is not merely untidy: the current window is whichever
-  // reaches furthest into the future, so one reading dated years out hides
-  // every real one until somebody deletes the row by hand.
-  const host = (req.headers.get("x-burnwatch-host") ?? "").slice(0, 64);
-  const sessionId = (body.session_id ?? "").slice(0, 128) || null;
-  const model =
-    (body.model?.id ?? body.model?.display_name ?? "").slice(0, 128) || null;
+  // Identity caps and reading validation live in core/ingest.ts, shared with
+  // the daemon so the two ingests cannot drift into disagreeing about what
+  // they accept.
+  const who = identityOf(req.headers.get("x-burnwatch-host") ?? "", body);
+  const { samples, rejected, hadLimits } = parseIngest(body, now);
 
-  const statements = [store.beatStatement(host, sessionId, now, model)];
-
-  const limits = body.rate_limits;
-  let rejected = 0;
-  for (const key of WINDOW_KEYS) {
-    const w = limits?.[key];
-    if (
-      !w ||
-      typeof w.used_percentage !== "number" ||
-      typeof w.resets_at !== "number" ||
-      !Number.isFinite(w.used_percentage) ||
-      !Number.isFinite(w.resets_at)
-    ) {
-      continue;
-    }
-
-    // A reset belongs inside its own window, give or take a day of clock skew.
-    // Anything further out is not a reading this endpoint can have produced.
-    const earliest = now - WINDOW_LENGTH[key];
-    const latest = now + WINDOW_LENGTH[key] + 86400;
-    if (w.resets_at < earliest || w.resets_at > latest) {
-      rejected++;
-      continue;
-    }
-    if (w.used_percentage < 0 || w.used_percentage > 100) {
-      rejected++;
-      continue;
-    }
-
+  const statements = [store.beatStatement(who.host, who.sessionId, now, who.model)];
+  for (const s of samples) {
     statements.push(
       store.insertStatement({
         ts: now,
-        window: key,
-        // Upstream sends values like 7.000000000000001; round before storing so
-        // the dedupe check compares clean numbers and the feed reads sanely.
-        pct: Math.round(w.used_percentage * 100) / 100,
-        resets_at: w.resets_at,
-        host,
-        session_id: sessionId,
-        model,
+        window: s.window,
+        pct: s.pct,
+        resets_at: s.resets_at,
+        host: who.host,
+        session_id: who.sessionId,
+        model: who.model,
       }),
     );
   }
@@ -172,7 +141,7 @@ async function ingest(
     ok: true,
     recorded,
     ...(rejected ? { rejected } : {}),
-    ...(limits ? {} : { reason: "no rate_limits in payload" }),
+    ...(!hadLimits ? { reason: "no rate_limits in payload" } : {}),
   });
 }
 
