@@ -1,18 +1,14 @@
 import { normalize } from "node:path/posix";
 import { computeWindow, type WindowState } from "../core/compute";
-import { config, WINDOW_KEYS, type WindowKey } from "./config";
+import {
+  identityOf,
+  parseIngest,
+  type StatusLinePayload,
+} from "../core/ingest";
+import { config, WINDOW_KEYS } from "./config";
 import { Store } from "./store";
 
 const store = new Store();
-
-/** Shape of the slice of Claude Code's status-line JSON that we care about. */
-type StatusLinePayload = {
-  session_id?: string;
-  model?: { id?: string; display_name?: string };
-  rate_limits?: Partial<
-    Record<WindowKey, { used_percentage?: number; resets_at?: number }>
-  >;
-};
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -55,40 +51,37 @@ function authorized(req: Request, url: URL): boolean {
 
 function ingest(req: Request, body: StatusLinePayload): Response {
   const now = Math.floor(Date.now() / 1000);
-  const host = (req.headers.get("x-burnwatch-host") ?? "").slice(0, 64);
-  const sessionId = body.session_id ?? null;
-  const model = body.model?.id ?? body.model?.display_name ?? null;
 
-  store.beat(host, sessionId, now, model);
+  // Identity caps and reading validation live in core/ingest.ts, shared with
+  // the Worker so the two ingests cannot drift into disagreeing about what
+  // they accept. The daemon previously checked none of the bounds the Worker
+  // did, so one bad client on the LAN could poison its feed.
+  const who = identityOf(req.headers.get("x-burnwatch-host") ?? "", body);
+  const { samples, rejected, hadLimits } = parseIngest(body, now);
 
-  const limits = body.rate_limits;
-  if (!limits) {
-    // Expected before the session's first API response, and for non-subscribers.
-    return json({ ok: true, recorded: 0, reason: "no rate_limits in payload" });
-  }
+  store.beat(who.host, who.sessionId, now, who.model);
 
   let recorded = 0;
-  for (const key of WINDOW_KEYS) {
-    const w = limits[key];
-    if (!w || typeof w.used_percentage !== "number" || typeof w.resets_at !== "number") {
-      continue;
-    }
+  for (const s of samples) {
     const wrote = store.insert({
       ts: now,
-      window: key,
-      // Upstream sends values like 7.000000000000001; round before storing so
-      // the dedupe check compares clean numbers and the feed reads sanely.
-      pct: Math.round(w.used_percentage * 100) / 100,
-      resets_at: w.resets_at,
-      host,
-      session_id: sessionId,
-      model,
+      window: s.window,
+      pct: s.pct,
+      resets_at: s.resets_at,
+      host: who.host,
+      session_id: who.sessionId,
+      model: who.model,
     });
     if (wrote) recorded++;
   }
 
   store.prune(now);
-  return json({ ok: true, recorded });
+  return json({
+    ok: true,
+    recorded,
+    ...(rejected ? { rejected } : {}),
+    ...(!hadLimits ? { reason: "no rate_limits in payload" } : {}),
+  });
 }
 
 function state(): Response {
