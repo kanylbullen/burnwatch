@@ -126,7 +126,8 @@ async function ingest(
   const who = identityOf(req.headers.get("x-burnwatch-host") ?? "", body);
   const { samples, rejected, hadLimits } = parseIngest(body, now);
 
-  const statements = [store.beatStatement(who.host, who.sessionId, now, who.model)];
+  const beats = store.beatStatements(who.host, who.sessionId, now, who.model);
+  const statements = [...beats];
   for (const s of samples) {
     statements.push(
       store.insertStatement({
@@ -144,7 +145,7 @@ async function ingest(
   const results = await env.DB.batch(statements);
   // The heartbeat always writes; only the sample statements count as recorded.
   const recorded = results
-    .slice(1)
+    .slice(beats.length)
     .reduce((n, r) => n + (r.meta?.changes ?? 0), 0);
 
   return json({
@@ -293,9 +294,9 @@ async function poll(env: Env, now: number): Promise<void> {
 
   // The heartbeat is written only on a successful reading, so a broken poller
   // never shows up as a live host.
-  statements.unshift(store.beatStatement("cloudflare", null, now, null));
-  await env.DB.batch(statements);
-  console.log(`poll: recorded ${statements.length - 1} window(s)`);
+  const beats = store.beatStatements("cloudflare", null, now, null);
+  await env.DB.batch([...beats, ...statements]);
+  console.log(`poll: recorded ${statements.length} window(s)`);
 }
 
 export default {
