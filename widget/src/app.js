@@ -6,7 +6,11 @@
  */
 
 const CARDS = 4;
-const POLL_MS = 10_000;
+// Every poll is a D1 read on the free tier's daily rows_read budget, and the
+// reading only moves when Claude Code answers something, so half a minute
+// loses nothing a person could notice. The widget also stops while hidden:
+// minimised or parked in the tray, it was polling an empty screen.
+const POLL_MS = 30_000;
 const ROTATE_MS = 9_000;
 /** Past this much silence the reading is history, not a live number. */
 const STALE_S = 20 * 60;
@@ -559,5 +563,13 @@ async function tick() {
   }
 }
 
-tick();
-setInterval(tick, POLL_MS);
+function tickIfVisible() {
+  if (document.hidden) return;
+  tick();
+}
+
+tickIfVisible();
+setInterval(tickIfVisible, POLL_MS);
+// Coming back from the tray, refresh at once rather than showing up to a full
+// interval of stale numbers first.
+document.addEventListener("visibilitychange", tickIfVisible);

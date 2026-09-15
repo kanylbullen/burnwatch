@@ -107,6 +107,10 @@ npx wrangler deploy
 Generate the token with something like `openssl rand -base64 24`. Keep it: every
 collector needs it.
 
+When upgrading, run the migrations before the deploy, in that order: a Worker
+that reads a table the database does not have yet answers every poll with an
+error until the migration lands.
+
 The Worker **refuses every request** while `BURNWATCH_TOKEN` is unset, rather
 than treating an empty token as "authentication disabled". A half-finished
 deploy has to fail closed on a public endpoint.
