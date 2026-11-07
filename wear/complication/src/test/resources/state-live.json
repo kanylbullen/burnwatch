@@ -31,22 +31,6 @@
   },
   "last_contact_s": 46,
   "windows": {
-    "five_hour": {
-      "pct": 59,
-      "resets_at": 1787001000,
-      "resets_in_s": 499,
-      "window_length_s": 18000,
-      "rate_pct_per_h": 28.6498,
-      "required_pct_per_h": 295.7916,
-      "pace_ratio": 0.0969,
-      "verdict": "speed_up",
-      "speed_up_x": 10.32,
-      "runs_out_at": null,
-      "early_by_s": null,
-      "used_today_pct": 59,
-      "samples": 17,
-      "last_change_s": 46
-    },
     "seven_day": {
       "pct": 40,
       "resets_at": 1787263200,

@@ -1,7 +1,7 @@
 {
   "name": "burnwatch",
   "version": "0.1.0",
-  "description": "Desk widget for your Claude Code rate limits: how much of the weekly and 5-hour allowance is gone, how fast you are burning it, and whether you run dry before the reset",
+  "description": "Desk widget for your Claude Code rate limit: how much of the weekly allowance is gone, how fast you are burning it, and whether you run dry before the reset",
   "license": "MIT",
   "author": "kanylbullen",
   "repository": {

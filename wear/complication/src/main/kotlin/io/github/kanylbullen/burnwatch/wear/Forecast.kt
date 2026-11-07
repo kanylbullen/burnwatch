@@ -40,6 +40,35 @@ fun forecast(w: Window?, tz: String): Forecast {
 }
 
 /**
+ * The widget's pace line, word for word: the burn measured over the lookback,
+ * and under it the burn that would land exactly on 100% at the reset. These
+ * are the two numbers the verdict is made of, so it can be checked rather than
+ * taken on trust.
+ */
+fun pace(w: Window?): Forecast {
+    if (w == null) return Forecast("—", "—")
+    return Forecast(
+        label = perDay(w.ratePctPerH),
+        detail = if (w.requiredPctPerH <= 0.0) {
+            "NOTHING LEFT BEFORE RESET"
+        } else {
+            "${perDay(w.requiredPctPerH)} FINISHES AT RESET"
+        },
+    )
+}
+
+/**
+ * The widget's `perDay()`. A day rather than an hour, because a weekly
+ * allowance moves a few points a day and "0.2%/H" reads as nothing happening;
+ * one decimal below ten, where it is most of the information, and none above.
+ */
+fun perDay(pctPerH: Double): String {
+    val d = pctPerH * 24
+    val n = if (d < 10) String.format(Locale.UK, "%.1f", d) else Math.round(d).toString()
+    return "$n%/DAY"
+}
+
+/**
  * The widget's `dur()`, which is not [humanDuration].
  *
  * They differ because they answer different questions: a complication is read

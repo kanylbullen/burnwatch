@@ -24,13 +24,28 @@ class RenderingTest {
         val state = checkNotNull(parseState(fixture("state-live.json")))
 
         assertEquals(1787000501L, state.now)
-        assertEquals(59, state.windows[WindowKey.FIVE_HOUR]?.pct)
         assertEquals(40, state.windows[WindowKey.SEVEN_DAY]?.pct)
         assertNull(state.windows[WindowKey.SEVEN_DAY]?.runsOutAtS)
+        assertEquals(0.525, state.windows[WindowKey.SEVEN_DAY]!!.ratePctPerH, 1e-9)
+        assertEquals(0.8222, state.windows[WindowKey.SEVEN_DAY]!!.requiredPctPerH, 1e-9)
     }
 
     @Test
-    fun `renders both windows from the real response`() {
+    fun `a five_hour window from an older worker is ignored`() {
+        // Claude dropped the five-hour limit, but a deployment that has not
+        // been redeployed may still serve one. It must not break the parse.
+        val body = """
+            {"ok":true,"now":100,"windows":{
+              "five_hour":{"pct":59,"resets_in_s":499,"verdict":"speed_up"},
+              "seven_day":{"pct":40,"resets_in_s":262699,"verdict":"speed_up"}}}
+        """.trimIndent()
+        val state = checkNotNull(parseState(body))
+
+        assertEquals(setOf(WindowKey.SEVEN_DAY), state.windows.keys)
+    }
+
+    @Test
+    fun `renders the weekly window from the real response`() {
         val state = checkNotNull(parseState(fixture("state-live.json")))
 
         val weekly = checkNotNull(render(state, ageS = 0, key = WindowKey.SEVEN_DAY))
@@ -42,19 +57,15 @@ class RenderingTest {
         // The status screen breaks between these two, so they have to stand
         // alone — a duration split across a line reads as two numbers.
         assertEquals("resets in 3d", weekly.detail)
-
-        val fiveHour = checkNotNull(render(state, ageS = 0, key = WindowKey.FIVE_HOUR))
-        assertEquals("59%", fiveHour.short)
-        assertEquals("59% · resets in 8m", fiveHour.long)
     }
 
     @Test
     fun `a window the worker could not compute renders as nothing`() {
-        val body = """{"ok":true,"now":100,"windows":{"five_hour":null,"seven_day":null}}"""
+        val body = """{"ok":true,"now":100,"windows":{"seven_day":null}}"""
         val state = checkNotNull(parseState(body))
 
         assertTrue(state.windows.isEmpty())
-        assertNull(render(state, ageS = 0, key = WindowKey.FIVE_HOUR))
+        assertNull(render(state, ageS = 0, key = WindowKey.SEVEN_DAY))
     }
 
     @Test
@@ -114,13 +125,11 @@ class RenderingTest {
     fun `an impossible percentage drops the window rather than clamping it`() {
         val body = """
             {"ok":true,"now":100,"windows":{
-              "five_hour":{"pct":140,"resets_in_s":60,"verdict":"unknown"},
-              "seven_day":{"pct":12,"resets_in_s":60,"verdict":"on_pace"}}}
+              "seven_day":{"pct":140,"resets_in_s":60,"verdict":"unknown"}}}
         """.trimIndent()
         val state = checkNotNull(parseState(body))
 
-        assertNull(state.windows[WindowKey.FIVE_HOUR])
-        assertEquals(12, state.windows[WindowKey.SEVEN_DAY]?.pct)
+        assertNull(state.windows[WindowKey.SEVEN_DAY])
     }
 
     @Test

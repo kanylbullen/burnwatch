@@ -3,12 +3,13 @@ package io.github.kanylbullen.burnwatch.wear
 import org.json.JSONObject
 
 /**
- * The two rate-limit windows Claude Code reports, named as `/api/state` names
- * them. The label is what a complication shows as its title — two characters,
- * because a small slot on a watch face has room for almost nothing.
+ * The rate-limit windows Claude Code reports, named as `/api/state` names them.
+ * Only the week is left since Claude dropped the five-hour limit; a window in
+ * the feed that is not listed here is ignored. The label is what a
+ * complication shows as its title — two characters, because a small slot on a
+ * watch face has room for almost nothing.
  */
 enum class WindowKey(val jsonKey: String, val label: String) {
-    FIVE_HOUR("five_hour", "5h"),
     SEVEN_DAY("seven_day", "7d"),
 }
 
@@ -25,6 +26,10 @@ data class Window(
     val runsOutAtS: Long?,
     /** How long before the reset it runs out, when it does. */
     val earlyByS: Long?,
+    /** Burn measured over the lookback, in points per hour. */
+    val ratePctPerH: Double = 0.0,
+    /** Burn that would land exactly on 100% at the reset, in points per hour. */
+    val requiredPctPerH: Double = 0.0,
 )
 
 /** A machine that reports, and how long ago it last did. */
@@ -107,6 +112,8 @@ fun parseState(body: String): State? {
             speedUpX = if (w.isNull("speed_up_x")) null else w.optDouble("speed_up_x"),
             runsOutAtS = if (w.isNull("runs_out_at")) null else w.optLong("runs_out_at"),
             earlyByS = if (w.isNull("early_by_s")) null else w.optLong("early_by_s"),
+            ratePctPerH = w.optDouble("rate_pct_per_h", 0.0),
+            requiredPctPerH = w.optDouble("required_pct_per_h", 0.0),
         )
     }
 

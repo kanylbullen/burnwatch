@@ -10,12 +10,17 @@
 
 const H = 3600;
 
-export const WINDOW_KEYS = ["five_hour", "seven_day"] as const;
+/**
+ * The rate-limit windows burnwatch tracks. Only the weekly one is left: Claude
+ * dropped the five-hour limit, and since then Claude Code and the API report
+ * the week alone. Kept as a list because the feed, the schema and every client
+ * are keyed by window name, and a window Claude adds later slots in here.
+ */
+export const WINDOW_KEYS = ["seven_day"] as const;
 export type WindowKey = (typeof WINDOW_KEYS)[number];
 
 /** Nominal length of each rate-limit window, as Claude Code defines them. */
 export const WINDOW_LENGTH: Record<WindowKey, number> = {
-  five_hour: 5 * H,
   seven_day: 7 * 24 * H,
 };
 
@@ -40,7 +45,6 @@ export const DEFAULTS = {
 
   /** How far back "current pace" looks, per window. */
   lookback: {
-    five_hour: 1 * H,
     seven_day: 24 * H,
   } as Record<WindowKey, number>,
 

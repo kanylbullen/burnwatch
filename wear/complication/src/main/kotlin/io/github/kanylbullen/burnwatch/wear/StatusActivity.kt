@@ -20,8 +20,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * Three screens, swiped vertically: the five-hour window, the week, and the
- * verdict.
+ * Three screens, swiped vertically: the week, the verdict, and who is
+ * reporting.
  *
  * Vertical and not horizontal because on Wear a sideways swipe is the back
  * gesture — a horizontal pager would fight the system for the same movement
@@ -65,14 +65,9 @@ class StatusActivity : Activity() {
      * an hour to evaluate.
      */
     private fun refreshComplications() {
-        for (service in listOf(
-            WeeklyComplicationService::class.java,
-            FiveHourComplicationService::class.java,
-        )) {
-            ComplicationDataSourceUpdateRequester
-                .create(this, ComponentName(this, service))
-                .requestUpdateAll()
-        }
+        ComplicationDataSourceUpdateRequester
+            .create(this, ComponentName(this, WeeklyComplicationService::class.java))
+            .requestUpdateAll()
         BurnwatchTileService.refresh(this)
     }
 
@@ -166,17 +161,17 @@ class StatusActivity : Activity() {
                 is PacePage -> bindPace(page, gauge, column, footer)
                 is HostsPage -> bindHosts(page, gauge, column, footer)
                 is MessagePage -> {
-                    gauge.rings = ringsFor(null, null)
+                    gauge.rings = ringsFor(null)
                     column.addView(text(page.text, 14f, Color.WHITE))
                 }
             }
         }
 
         private fun bindWindow(page: WindowPage, gauge: GaugeView, column: LinearLayout, footer: String) {
-            // Only this window's ring, so the page and the rim say the same
-            // thing. Two arcs here would invite reading the wrong one.
+            // A touch heavier than on the other pages: here the ring is the
+            // number itself rather than a reminder of it.
             gauge.rings = listOf(
-                GaugeView.Ring(page.fraction, colorFor(page.key), widthDp = 7f, insetDp = 4f),
+                GaugeView.Ring(page.fraction, GaugeView.ACCENT, widthDp = 7f, insetDp = 4f),
             )
 
             column.addView(text(page.key.label, 13f, DIM))
@@ -186,7 +181,7 @@ class StatusActivity : Activity() {
                 column.addView(text("—", 40f, DIM))
                 column.addView(text(getString(R.string.status_window_absent, page.key.label), 12f, DIM))
             } else {
-                column.addView(text(r.short, 40f, colorFor(page.key)))
+                column.addView(text(r.short, 40f, GaugeView.ACCENT))
                 column.addView(text(r.detail, 13f, Color.WHITE))
             }
 
@@ -194,7 +189,7 @@ class StatusActivity : Activity() {
         }
 
         private fun bindPace(page: PacePage, gauge: GaugeView, column: LinearLayout, footer: String) {
-            gauge.rings = ringsFor(page.weeklyFraction, page.fiveHourFraction)
+            gauge.rings = ringsFor(page.weeklyFraction)
 
             for (row in page.rows) {
                 column.addView(text(row.label, 11f, DIM, topDp = 4))
@@ -206,7 +201,7 @@ class StatusActivity : Activity() {
         }
 
         private fun bindHosts(page: HostsPage, gauge: GaugeView, column: LinearLayout, footer: String) {
-            gauge.rings = ringsFor(page.weeklyFraction, page.fiveHourFraction)
+            gauge.rings = ringsFor(page.weeklyFraction)
 
             column.addView(text(page.sessions, 13f, GaugeView.ACCENT))
 
@@ -229,15 +224,9 @@ class StatusActivity : Activity() {
             if (footer.isNotEmpty()) column.addView(text(footer, 10f, DIM, topDp = 4))
         }
 
-        private fun ringsFor(weekly: Float?, fiveHour: Float?) = listOf(
+        private fun ringsFor(weekly: Float?) = listOf(
             GaugeView.Ring(weekly, GaugeView.ACCENT, widthDp = 6f, insetDp = 4f),
-            GaugeView.Ring(fiveHour, GaugeView.ACCENT_SOFT, widthDp = 4f, insetDp = 15f),
         )
-
-        private fun colorFor(key: WindowKey) = when (key) {
-            WindowKey.SEVEN_DAY -> GaugeView.ACCENT
-            WindowKey.FIVE_HOUR -> GaugeView.ACCENT_SOFT
-        }
 
         private fun text(value: String, sizeSp: Float, color: Int, topDp: Int = 0): TextView =
             TextView(this@StatusActivity).apply {

@@ -30,28 +30,7 @@
         </footer>
       </section>
 
-      <!-- 2. Five-hour session allowance -->
-      <section class="card" data-card="session">
-        <header class="row">
-          <span class="brand"><i class="dot"></i>CLAUDE</span>
-          <span class="meta">SESSION</span>
-        </header>
-        <p class="kicker">5-HOUR · ALL MODELS</p>
-        <p class="hero" data-bind="five.pct">—</p>
-        <div class="bar"><span data-bind="five.bar"></span><i data-bind="five.tick"></i></div>
-        <footer class="row baseline">
-          <span class="stat accent">
-            <b data-bind="five.rate">—</b>
-            <small>PER HOUR</small>
-          </span>
-          <span class="stat right">
-            <b data-bind="five.reset">—</b>
-            <small>TO RESET</small>
-          </span>
-        </footer>
-      </section>
-
-      <!-- 3. Burn rate forecast -->
+      <!-- 2. Burn rate forecast -->
       <section class="card" data-card="burn">
         <header class="row">
           <span class="brand plain">BURN RATE</span>
@@ -63,13 +42,13 @@
           <p class="note accent" data-bind="week.detail">—</p>
         </div>
         <div class="split">
-          <p class="kicker">CLAUDE · 5-HOUR</p>
-          <p class="verdict small" data-bind="five.verdict">—</p>
-          <p class="note link" data-bind="five.detail">—</p>
+          <p class="kicker">CURRENT PACE</p>
+          <p class="verdict small" data-bind="week.pace">—</p>
+          <p class="note link" data-bind="week.needed">—</p>
         </div>
       </section>
 
-      <!-- 4. Pipeline health -->
+      <!-- 3. Pipeline health -->
       <section class="card" data-card="status">
         <header class="row">
           <span class="brand plain">STATUS</span>

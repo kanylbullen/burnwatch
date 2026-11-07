@@ -5,7 +5,7 @@
  * logic here doubles as the reference for what that firmware must render.
  */
 
-const CARDS = 4;
+const CARDS = 3;
 const POLL_MS = 10_000;
 const ROTATE_MS = 9_000;
 /** Past this much silence the reading is history, not a live number. */
@@ -24,6 +24,16 @@ const set = (name, value) => {
 /* ---------- formatting ---------- */
 
 const pct = (n) => (n == null ? "—" : `${Math.round(n)}%`);
+
+/**
+ * A pace per day rather than per hour: a weekly allowance moves a few points a
+ * day, and "0.2%/H" reads as nothing happening. One decimal below ten, where
+ * the decimal is most of the information, and none above, where it is noise.
+ */
+function perDay(pctPerH) {
+  const d = pctPerH * 24;
+  return `${d < 10 ? d.toFixed(1) : Math.round(d)}%/DAY`;
+}
 
 /**
  * Coarse duration: the two largest units that carry information.
@@ -125,11 +135,12 @@ function paintWindow(prefix, w, tz) {
   const empty = !w;
   hero?.classList.toggle("empty", empty);
   el(`${prefix}.verdict`)?.classList.toggle("empty", empty);
+  el(`${prefix}.pace`)?.classList.toggle("empty", empty);
   bar?.parentElement?.classList.toggle("empty", empty);
 
   if (empty) {
     set(`${prefix}.pct`, "NO DATA");
-    for (const k of ["reset", "today", "rate"]) set(`${prefix}.${k}`, "—");
+    for (const k of ["reset", "today", "pace", "needed"]) set(`${prefix}.${k}`, "—");
     if (bar) bar.style.width = "0%";
     return;
   }
@@ -144,7 +155,17 @@ function paintWindow(prefix, w, tz) {
     `${prefix}.today`,
     w.used_today_pct == null ? "—" : `+${Math.round(w.used_today_pct)}%`,
   );
-  set(`${prefix}.rate`, `${w.rate_pct_per_h.toFixed(1)}%`);
+
+  // The two numbers the verdict is made of, so it can be checked rather than
+  // taken on trust: the pace measured over the lookback, and the pace that
+  // would land exactly on 100% at the reset.
+  set(`${prefix}.pace`, perDay(w.rate_pct_per_h));
+  set(
+    `${prefix}.needed`,
+    w.required_pct_per_h <= 0
+      ? "NOTHING LEFT BEFORE RESET"
+      : `${perDay(w.required_pct_per_h)} FINISHES AT RESET`,
+  );
 
   if (bar) bar.style.width = `${Math.min(100, Math.max(0, w.pct))}%`;
 
@@ -160,10 +181,8 @@ function paintWindow(prefix, w, tz) {
 function paint(state) {
   const tz = state.tz ?? "UTC";
   const week = state.windows?.seven_day ?? null;
-  const five = state.windows?.five_hour ?? null;
 
   paintWindow("week", week, tz);
-  paintWindow("five", five, tz);
 
   const n = state.active_sessions ?? 0;
   set("sessions", `${n} CHAT${n === 1 ? "" : "S"} ACTIVE`);
@@ -227,26 +246,22 @@ function paint(state) {
   document.body.dataset.stale =
     contact != null && contact > STALE_S ? "1" : "0";
 
-  paintTray(week, five, tz);
+  paintTray(week);
 }
 
 /**
  * Mirrors the reading onto the tray icon, so the window does not have to be
  * on screen — or even open — to know where you stand.
  */
-function paintTray(week, five, tz) {
+function paintTray(week) {
   const invoke = globalThis.__TAURI__?.core?.invoke;
   if (!invoke) return;
 
-  const part = (label, w) =>
-    w == null ? `${label} —` : `${label} ${Math.round(w.pct)}%`;
-  const tail = week
-    ? `  ·  resets in ${dur(week.resets_in_s)}`
-    : "  ·  no current reading";
-
   invoke("set_tray", {
     weekly: week ? week.pct : null,
-    tooltip: `${part("7d", week)}   ${part("5h", five)}${tail}`,
+    tooltip: week
+      ? `7d ${Math.round(week.pct)}%  ·  resets in ${dur(week.resets_in_s)}`
+      : "7d —  ·  no current reading",
   }).catch(() => {
     /* The shell may be gone mid-shutdown; the next tick retries. */
   });
@@ -337,14 +352,13 @@ addEventListener("mousedown", (e) => {
  */
 const H = 3600;
 const FIXTURES = {
-  empty: () => ({ hosts: [], active_sessions: 0, last_contact_s: null, poll: null, windows: { five_hour: null, seven_day: null } }),
+  empty: () => ({ hosts: [], active_sessions: 0, last_contact_s: null, poll: null, windows: { seven_day: null } }),
   speed_up: (t) => ({
     hosts: [{ name: "desktop", last_seen_s: 3, active: true }],
     active_sessions: 2,
     last_contact_s: 3,
     poll: { last_seen_s: 240, stale: false },
     windows: {
-      five_hour: win(t, 12, 3 * H, 5 * H, { verdict: "speed_up", speed_up_x: 2.4, rate: 2.9, required: 7.1, used_today: 12 }),
       seven_day: win(t, 23, 47 * H, 7 * 24 * H, { verdict: "speed_up", speed_up_x: 7.9, rate: 0.21, required: 1.64, used_today: 5 }),
     },
   }),
@@ -354,7 +368,6 @@ const FIXTURES = {
     last_contact_s: 8,
     poll: { last_seen_s: 240, stale: false },
     windows: {
-      five_hour: win(t, 78, 2 * H, 5 * H, { verdict: "runs_out", runs_out_at: t + 1500, early_by_s: 5700, rate: 39, required: 11, used_today: 78 }),
       seven_day: win(t, 84, 30 * H, 7 * 24 * H, { verdict: "runs_out", runs_out_at: t + 9 * H, early_by_s: 21 * H, rate: 1.8, required: 0.53, used_today: 22 }),
     },
   }),
@@ -364,7 +377,6 @@ const FIXTURES = {
     last_contact_s: 5,
     poll: { last_seen_s: 240, stale: false },
     windows: {
-      five_hour: win(t, 100, 90 * 60, 5 * H, { verdict: "runs_out", runs_out_at: t, early_by_s: 0, rate: 30, required: 0, used_today: 100 }),
       seven_day: win(t, 96, 40 * H, 7 * 24 * H, { verdict: "runs_out", runs_out_at: t + 2 * H, early_by_s: 38 * H, rate: 2, required: 0.1, used_today: 40 }),
     },
   }),
@@ -374,7 +386,6 @@ const FIXTURES = {
     last_contact_s: 2,
     poll: { last_seen_s: 240, stale: false },
     windows: {
-      five_hour: win(t, 44, 3 * H, 5 * H, { verdict: "on_pace", rate: 18.6, required: 18.7, used_today: 44 }),
       seven_day: win(t, 51, 80 * H, 7 * 24 * H, { verdict: "on_pace", rate: 0.61, required: 0.61, used_today: 9 }),
     },
   }),
@@ -384,7 +395,6 @@ const FIXTURES = {
     last_contact_s: 4 * H,
     poll: { last_seen_s: 3 * H, stale: true },
     windows: {
-      five_hour: null,
       seven_day: win(t, 61, 20 * H, 7 * 24 * H, { verdict: "speed_up", speed_up_x: 3.1, rate: 0.6, required: 1.95, used_today: null }),
     },
   }),
@@ -395,7 +405,6 @@ const FIXTURES = {
     last_contact_s: 0,
     poll: { last_seen_s: 240, stale: false },
     windows: {
-      five_hour: win(t, 33, 4 * H, 5 * H, { verdict: "speed_up", speed_up_x: 1.8, rate: 8, required: 14.4, used_today: 33 }),
       seven_day: win(t, 47, 60 * H, 7 * 24 * H, { verdict: "speed_up", speed_up_x: 1.4, rate: 0.63, required: 0.88, used_today: 11 }),
     },
   }),

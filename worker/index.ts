@@ -35,7 +35,6 @@ export type Env = {
   /** Cloudflare rate-limit binding; absent in older deployments. */
   INGEST_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   BURNWATCH_TZ?: string;
-  BURNWATCH_LOOKBACK_5H?: string;
   BURNWATCH_LOOKBACK_7D?: string;
   BURNWATCH_RETENTION_S?: string;
   BURNWATCH_ACTIVE_SESSION_S?: string;
@@ -45,7 +44,6 @@ function settings(env: Env) {
   return {
     timeZone: env.BURNWATCH_TZ || DEFAULTS.timeZone,
     lookback: {
-      five_hour: num(env.BURNWATCH_LOOKBACK_5H, DEFAULTS.lookback.five_hour),
       seven_day: num(env.BURNWATCH_LOOKBACK_7D, DEFAULTS.lookback.seven_day),
     } as Record<WindowKey, number>,
     retentionS: num(env.BURNWATCH_RETENTION_S, DEFAULTS.retentionS),
@@ -253,11 +251,10 @@ async function poll(env: Env, now: number): Promise<void> {
   const store = new Store(env.DB);
   const statements: D1PreparedStatement[] = [];
 
-  // Utilization arrives as a fraction of the allowance, not a percentage.
-  const windows: [WindowKey, string][] = [
-    ["five_hour", "5h"],
-    ["seven_day", "7d"],
-  ];
+  // Utilization arrives as a fraction of the allowance, not a percentage. The
+  // 5h headers went with the five-hour limit; a response still carrying them
+  // is not read.
+  const windows: [WindowKey, string][] = [["seven_day", "7d"]];
   for (const [key, prefix] of windows) {
     const util = res.headers.get(`anthropic-ratelimit-unified-${prefix}-utilization`);
     const reset = res.headers.get(`anthropic-ratelimit-unified-${prefix}-reset`);

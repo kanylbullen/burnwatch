@@ -98,6 +98,9 @@ export function parseIngest(body: unknown, now: number): ParsedIngest {
   const samples: ValidSample[] = [];
   let rejected = 0;
 
+  // Only the windows burnwatch tracks are read. Anything else in the block —
+  // a gateway's `spend_limit`, or a `five_hour` from before Claude dropped
+  // that limit — is passed over without counting as rejected.
   for (const key of WINDOW_KEYS) {
     const w = limits[key];
     if (!w || typeof w !== "object") continue;

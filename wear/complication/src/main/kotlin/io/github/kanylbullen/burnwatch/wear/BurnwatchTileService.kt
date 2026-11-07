@@ -85,15 +85,14 @@ class BurnwatchTileService : TileService() {
         }
 
     /**
-     * The week takes the rim and the headline, because it is the budget that
-     * decides your week; the five-hour window rides underneath it.
+     * The week takes the rim and the headline. Underneath it goes the second
+     * fact: when it resets, or how early it runs out when it will not last.
      */
     private fun layout(
         device: DeviceParameters,
         rendered: Map<WindowKey, Rendered?>,
     ): LayoutElement {
         val weekly = rendered[WindowKey.SEVEN_DAY]
-        val fiveHour = rendered[WindowKey.FIVE_HOUR]
 
         val progress = CircularProgressIndicator.Builder()
             .setProgress(weekly?.let { it.pct / 100f } ?: 0f)
@@ -117,7 +116,7 @@ class BurnwatchTileService : TileService() {
                     .build(),
             )
             .setSecondaryLabelTextContent(
-                Text.Builder(this, fiveHour?.let { "5h  ${it.short}" } ?: "5h  —")
+                Text.Builder(this, weekly?.detail ?: "no current reading")
                     .setTypography(Typography.TYPOGRAPHY_CAPTION2)
                     .setColor(ColorBuilders.argb(ACCENT_SOFT))
                     .build(),

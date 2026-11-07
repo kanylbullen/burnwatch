@@ -69,9 +69,6 @@ class GaugeView(context: Context) : View(context) {
         /** The widget's `--accent`, unchanged, so the two read as one product. */
         val ACCENT = Color.parseColor("#ff4b12")
 
-        /** `--accent-soft`, for the ring that is not the headline. */
-        val ACCENT_SOFT = Color.parseColor("#ff8a4c")
-
         private val TRACK = Color.parseColor("#2a2a2e")
     }
 }
