@@ -113,7 +113,6 @@ printf '%s' "$INPUT" | jq -r '
               else "--" end;
   [ (.model.display_name // "claude"),
     ((.workspace.current_dir // "") | split("/") | last // ""),
-    ("5h " + pct("five_hour")),
     ("7d " + pct("seven_day"))
   ] | map(select(. != "")) | join("  ·  ")
 '

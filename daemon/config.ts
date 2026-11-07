@@ -52,7 +52,6 @@ export const config = {
   timeZone: process.env.BURNWATCH_TZ || DEFAULTS.timeZone,
 
   lookback: {
-    five_hour: num(process.env.BURNWATCH_LOOKBACK_5H, DEFAULTS.lookback.five_hour),
     seven_day: num(process.env.BURNWATCH_LOOKBACK_7D, DEFAULTS.lookback.seven_day),
   },
 

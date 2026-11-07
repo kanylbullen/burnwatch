@@ -12,7 +12,7 @@ data class Rendered(
     val pct: Int,
     /** Fits a small slot: "59%". */
     val short: String,
-    /** Two characters of context: "5h" or "7d". */
+    /** Two characters of context: "7d". */
     val title: String,
     /** The second fact on its own, so a narrow screen can break between them. */
     val detail: String,

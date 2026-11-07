@@ -3,9 +3,9 @@ package io.github.kanylbullen.burnwatch.wear
 /**
  * The screens, decided here rather than in the view.
  *
- * One page per window so each number gets the whole face, and a third that
- * carries the verdict — which is the only part of burnwatch that tells you to
- * do something rather than just what happened.
+ * The week gets the whole face, a second page carries the verdict — the only
+ * part of burnwatch that tells you to do something rather than just what
+ * happened — and a third says who is reporting.
  */
 sealed interface Page
 
@@ -20,13 +20,12 @@ data class WindowPage(
 data class PaceRow(val label: String, val forecast: Forecast)
 
 /**
- * The verdicts, plus both fills — the rim keeps showing the numbers so this
- * page can spend all its words on what to do about them.
+ * The verdict and the pace behind it, plus the fill — the rim keeps showing
+ * the number so this page can spend all its words on what to do about it.
  */
 data class PacePage(
     val rows: List<PaceRow>,
     val weeklyFraction: Float?,
-    val fiveHourFraction: Float?,
 ) : Page
 
 data class HostLine(val text: String, val active: Boolean)
@@ -43,9 +42,8 @@ data class HostsPage(
     val hosts: List<HostLine>,
     val poll: String,
     val pollWarn: Boolean,
-    /** The rim keeps both fills on every page, so it never reads as broken. */
+    /** The rim keeps the fill on every page, so it never reads as broken. */
     val weeklyFraction: Float? = null,
-    val fiveHourFraction: Float? = null,
 ) : Page
 
 /**
@@ -64,23 +62,18 @@ data class MessagePage(val text: String) : Page
 fun pages(state: State?, ageS: Long): List<Page> {
     val usable = state?.takeIf { ageS in 0..STALE_AFTER_S }
 
-    val windowPages = WindowKey.entries.map { WindowPage(it, render(state, ageS, it)) }
+    val weekly = WindowPage(WindowKey.SEVEN_DAY, render(state, ageS, WindowKey.SEVEN_DAY))
+    val window = usable?.windows?.get(WindowKey.SEVEN_DAY)
 
-    val pace = PacePage(
-        rows = WindowKey.entries.map { key ->
-            PaceRow(
-                label = key.label,
-                forecast = forecast(usable?.windows?.get(key), usable?.tz ?: "UTC"),
-            )
-        },
-        weeklyFraction = windowPages.first { it.key == WindowKey.SEVEN_DAY }.fraction,
-        fiveHourFraction = windowPages.first { it.key == WindowKey.FIVE_HOUR }.fraction,
+    val pacePage = PacePage(
+        rows = listOf(
+            PaceRow(WindowKey.SEVEN_DAY.label, forecast(window, usable?.tz ?: "UTC")),
+            PaceRow("pace", pace(window)),
+        ),
+        weeklyFraction = weekly.fraction,
     )
 
-    return windowPages + pace + hostsPage(usable).copy(
-        weeklyFraction = pace.weeklyFraction,
-        fiveHourFraction = pace.fiveHourFraction,
-    )
+    return listOf(weekly, pacePage, hostsPage(usable).copy(weeklyFraction = weekly.fraction))
 }
 
 /** The client list, worded as the desktop widget words it. */

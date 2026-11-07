@@ -120,7 +120,6 @@ function Get-Pct($window) {
 $parts = @(
   $payload.model.display_name,
   (Split-Path -Leaf $payload.workspace.current_dir),
-  "5h $(Get-Pct 'five_hour')",
   "7d $(Get-Pct 'seven_day')"
 ) | Where-Object { $_ }
 

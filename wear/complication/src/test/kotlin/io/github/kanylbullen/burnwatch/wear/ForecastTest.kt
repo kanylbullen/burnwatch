@@ -17,6 +17,8 @@ class ForecastTest {
         runsOutAtS: Long? = null,
         earlyByS: Long? = null,
         resetsAtS: Long = 1_787_001_000,
+        ratePctPerH: Double = 0.0,
+        requiredPctPerH: Double = 0.0,
     ) = Window(
         pct = 50,
         resetsInS = 600,
@@ -25,6 +27,8 @@ class ForecastTest {
         speedUpX = speedUpX,
         runsOutAtS = runsOutAtS,
         earlyByS = earlyByS,
+        ratePctPerH = ratePctPerH,
+        requiredPctPerH = requiredPctPerH,
     )
 
     @Test
@@ -129,24 +133,40 @@ class ForecastTest {
     }
 
     @Test
-    fun `there are always four pages in the same order`() {
+    fun `the pace line is the widget's, word for word`() {
+        // The speed_up fixture's figures: 0.21 %/h measured, 1.64 %/h needed.
+        val p = pace(window("speed_up", ratePctPerH = 0.21, requiredPctPerH = 1.64))
+        assertEquals(Forecast("5.0%/DAY", "39%/DAY FINISHES AT RESET"), p)
+
+        // Nothing left to spend leaves no pace to finish at.
+        assertEquals(
+            "NOTHING LEFT BEFORE RESET",
+            pace(window("runs_out", ratePctPerH = 30.0, requiredPctPerH = 0.0)).detail,
+        )
+        assertEquals(Forecast("—", "—"), pace(null))
+    }
+
+    @Test
+    fun `there are always three pages in the same order`() {
         val state = parseState(fixture())
 
         val fresh = pages(state, ageS = 0)
-        assertEquals(4, fresh.size)
-        assertEquals(WindowKey.FIVE_HOUR, (fresh[0] as WindowPage).key)
-        assertEquals(WindowKey.SEVEN_DAY, (fresh[1] as WindowPage).key)
-        assertEquals(0.40f, (fresh[1] as WindowPage).fraction)
-        assertTrue(fresh[2] is PacePage)
-        assertEquals("3 CHATS ACTIVE", (fresh[3] as HostsPage).sessions)
+        assertEquals(3, fresh.size)
+        assertEquals(WindowKey.SEVEN_DAY, (fresh[0] as WindowPage).key)
+        assertEquals(0.40f, (fresh[0] as WindowPage).fraction)
+        val pace = fresh[1] as PacePage
+        assertEquals("SPEED UP", pace.rows[0].forecast.label)
+        assertEquals(Forecast("13%/DAY", "20%/DAY FINISHES AT RESET"), pace.rows[1].forecast)
+        assertEquals("3 CHATS ACTIVE", (fresh[2] as HostsPage).sessions)
 
-        // Stale keeps all four pages and empties them, rather than collapsing
+        // Stale keeps all three pages and empties them, rather than collapsing
         // the deck under the reader's thumb.
         val stale = pages(state, ageS = STALE_AFTER_S + 1)
-        assertEquals(4, stale.size)
+        assertEquals(3, stale.size)
         assertEquals(null, (stale[0] as WindowPage).rendered)
-        assertEquals("WAITING FOR FIRST SAMPLE", (stale[2] as PacePage).rows[0].forecast.detail)
-        assertTrue((stale[3] as HostsPage).hosts.isEmpty())
+        assertEquals("WAITING FOR FIRST SAMPLE", (stale[1] as PacePage).rows[0].forecast.detail)
+        assertEquals(Forecast("—", "—"), (stale[1] as PacePage).rows[1].forecast)
+        assertTrue((stale[2] as HostsPage).hosts.isEmpty())
     }
 
     private fun fixture(): String =

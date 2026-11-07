@@ -50,33 +50,16 @@
         </service>
 
         <!--
-          Two providers, one per window. SUPPORTED_TYPES is deliberately wide:
-          a slot lists only the providers offering a type it accepts, so a
-          narrow declaration is invisible on exactly the watch faces it does
-          not happen to match.
+          One provider per window, and only the week is left. SUPPORTED_TYPES
+          is deliberately wide: a slot lists only the providers offering a
+          type it accepts, so a narrow declaration is invisible on exactly the
+          watch faces it does not happen to match.
         -->
         <service
             android:name=".WeeklyComplicationService"
             android:exported="true"
             android:icon="@drawable/ic_burnwatch"
             android:label="@string/weekly_label"
-            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
-            <intent-filter>
-                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
-            </intent-filter>
-            <meta-data
-                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
-                android:value="RANGED_VALUE,SHORT_TEXT,LONG_TEXT" />
-            <meta-data
-                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
-                android:value="900" />
-        </service>
-
-        <service
-            android:name=".FiveHourComplicationService"
-            android:exported="true"
-            android:icon="@drawable/ic_burnwatch"
-            android:label="@string/five_hour_label"
             android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
             <intent-filter>
                 <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />

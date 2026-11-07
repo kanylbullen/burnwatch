@@ -120,8 +120,8 @@ test("an exhausted window reports as already run out", () => {
 });
 
 test("a window past its reset is not served as a live reading", () => {
-  // The 5-hour window expires nightly while nobody is coding. It used to keep
-  // publishing the dead window's percentage with resets_in_s clamped to 0.
+  // A window can expire while nobody is coding. It used to keep publishing the
+  // dead window's percentage with resets_in_s clamped to 0.
   const s = computeWindow(
     [
       { ts: NOW - 3 * H, pct: 41, resets_at: NOW - 1 * H },
@@ -192,10 +192,10 @@ test("a sparse series is dated by its real anchor, not by the lookback edge", ()
 test("a window seconds old does not produce an unbounded rate", () => {
   const s = computeWindow(
     [
-      { ts: NOW - 60, pct: 0, resets_at: NOW + 5 * H },
-      { ts: NOW - 10, pct: 5, resets_at: NOW + 5 * H },
+      { ts: NOW - 60, pct: 0, resets_at: NOW + WEEK },
+      { ts: NOW - 10, pct: 5, resets_at: NOW + WEEK },
     ],
-    { ...opts, lookbackS: 1 * H },
+    opts,
   )!;
 
   // 5 points in 50 seconds is 360 %/h, which would forecast an instant run-out.
@@ -216,13 +216,9 @@ test("used_today is null when the series does not reach back to midnight", () =>
 });
 
 test("used_today is the whole reading when the window opened after midnight", () => {
-  // A 5-hour window resetting in 1h opened at NOW-4h, which is after local
-  // midnight — so everything in it was necessarily spent today.
-  const s = computeWindow(ramp(0, 12, 3, NOW + 1 * H), {
-    ...opts,
-    lookbackS: 1 * H,
-    windowLengthS: 5 * H,
-  })!;
+  // A week that reset at NOW-4h opened after local midnight (NOW-10h), so
+  // everything in it was necessarily spent today.
+  const s = computeWindow(ramp(0, 12, 3, NOW + WEEK - 4 * H), opts)!;
 
   expect(s.used_today_pct).toBeCloseTo(12, 3);
 });

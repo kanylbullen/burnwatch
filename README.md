@@ -1,8 +1,8 @@
 # burnwatch
 
-**A desk widget for your Claude Code rate limits — how much of the weekly and
-5-hour allowance is gone, how fast you are burning it, and whether you run dry
-before the reset.**
+**A desk widget for your Claude Code rate limit — how much of the weekly
+allowance is gone, how fast you are burning it, and whether you run dry before
+the reset.**
 
 Claude Code will tell you your usage percentage if you go looking for it.
 burnwatch puts it on your desktop and, more usefully, turns it into a *rate*:
@@ -15,8 +15,7 @@ does it run out on Thursday morning?
 
 <p align="center">
   <img src="docs/screen-weekly.png" width="240" alt="Weekly allowance: 23% used, +23% today, 1D 22H to reset">
-  <img src="docs/screen-burn.png" width="240" alt="Burn rate: SPEED UP, 7.9x current pace to max out">
-  <img src="docs/screen-session.png" width="240" alt="5-hour session allowance: 38% used">
+  <img src="docs/screen-burn.png" width="240" alt="Burn rate: SPEED UP, 7.9x current pace to max out; current pace 5.0% a day against 39% a day to finish at reset">
 </p>
 
 ---
@@ -37,10 +36,13 @@ and that payload carries the real rate-limit block:
 
 ```json
 "rate_limits": {
-  "five_hour": { "used_percentage": 12.5, "resets_at": 1786610276 },
   "seven_day": { "used_percentage": 23.0, "resets_at": 1786772276 }
 }
 ```
+
+There used to be a `five_hour` window beside it. Claude has since dropped the
+five-hour limit, so the week is the only budget left and the only one
+burnwatch tracks; a `five_hour` block that still turns up is passed over.
 
 Three things follow from using that as the source:
 
@@ -74,6 +76,10 @@ The multiplier is `required_pace / current_pace`, where the required pace is
 what it would take to finish exactly at the reset. Worked example: 23% used
 with 47h left and +5%/day observed gives a required `77/47 = 1.64 %/h` against
 an observed `5/24 = 0.21 %/h` — so **7.9×**.
+
+The burn card prints those two paces under the verdict, per day — `5.0%/DAY`
+measured, `39%/DAY FINISHES AT RESET` — so the verdict can be checked rather
+than taken on trust.
 
 **burnwatch would rather say nothing than say something it cannot support.** A
 window reads `null` between its own reset and the first reading of the window
@@ -116,8 +122,8 @@ the Cloudflare dashboard or a `routes` entry in `wrangler.jsonc`.
 
 ## Collectors
 
-The collector prints a normal status line — `Opus 5 · myproject · 5h 41% ·
-7d 24%` — and reports in the background.
+The collector prints a normal status line — `Opus 5 · myproject · 7d 24%` —
+and reports in the background.
 
 Both collectors require **curl**, and the POSIX one also requires **jq**, which
 it uses to cut the payload down before anything leaves the machine.
@@ -233,7 +239,7 @@ Open the deployment in a browser for the zero-build version:
 https://burnwatch.example.workers.dev/?token=YOUR_TOKEN
 ```
 
-Add `&page=2&norotate=1` to pin one card. For the real thing — frameless,
+Add `&page=1&norotate=1` to pin one card. For the real thing — frameless,
 always on top, out of the taskbar — take an installer from the
 [releases page](https://github.com/kanylbullen/burnwatch/releases): `.msi` or
 `.exe` for Windows, `.dmg` for macOS, `.deb` or `.AppImage` for Linux. CI
@@ -292,9 +298,10 @@ you move or resize the window, and writes the token into it in plain text — so
 supplying the token by environment does not keep it out of the config directory.
 
 Click to page, drag to move, scroll or arrow keys to navigate. The tray icon
-carries the weekly ring and a tooltip with both windows; **right click** opens
-the menu — pin, theme, background opacity, discreet mode, quit — since a
-frameless window with no taskbar entry has no other way to be closed.
+carries the weekly ring and a tooltip with the percentage and the reset;
+**right click** opens the menu — pin, theme, background opacity, discreet mode,
+quit — since a frameless window with no taskbar entry has no other way to be
+closed.
 
 **Discreet mode** leaves nothing on screen. The tray ring is still the ambient
 signal, and **left clicking it** summons the window until you look away: moving
@@ -305,16 +312,13 @@ events at all — so the menu remains the only way in there.
 ## On the wrist
 
 <p align="center">
-  <img src="docs/wear-tile.png" width="200" alt="The tile: weekly arc filled to 53%, with 5h 9% underneath">
   <img src="docs/wear-7d.png" width="200" alt="Weekly window: 42% used, resets in 2d 23h, with the arc filled to match">
-  <img src="docs/wear-5h.png" width="200" alt="Five-hour window: 9% used, resets in 3h 46m">
-  <img src="docs/wear-pace.png" width="200" alt="Pace: SPEED UP on both windows, 3.4x and 1.4x current pace to max out">
   <img src="docs/wear-hosts.png" width="200" alt="Clients: 2 chats active, four hosts listed with how long each has been quiet">
 </p>
 
-A Wear OS app lives in [`wear/`](wear/): two complication providers, a tile,
-and four pages swiped vertically — each window, the verdict, and who is
-reporting. It reads `/api/state` over wifi or LTE without a companion phone
+A Wear OS app lives in [`wear/`](wear/): a complication provider, a tile, and
+three pages swiped vertically — the week, the verdict with the pace behind it,
+and who is reporting. It reads `/api/state` over wifi or LTE without a companion phone
 app, and it is another client of the same feed, so it required no server work
 at all.
 
@@ -393,8 +397,7 @@ without it.
       "used_today_pct": 1.81,    // null when the series predates local midnight
       "samples": 145,
       "last_change_s": 0         // idleness, NOT health — use last_contact_s
-    },
-    "five_hour": { }
+    }
   }
 }
 ```
@@ -419,7 +422,6 @@ reads the same names from the environment or from `~/.burnwatch/env`.
 | `BURNWATCH_READ_TOKEN` | *(unset)* | Optional. `GET /api/state` only — for phones, watches and displays |
 | `BURNWATCH_TZ` | `Europe/Stockholm` | Drives "used today" and displayed clock times |
 | `BURNWATCH_LOOKBACK_7D` | `86400` | Window for measuring weekly pace |
-| `BURNWATCH_LOOKBACK_5H` | `3600` | Window for measuring session pace |
 | `BURNWATCH_ACTIVE_SESSION_S` | `900` | How recently a session must have reported to count as active |
 | `BURNWATCH_RETENTION_S` | `2592000` | Samples older than this are pruned nightly |
 | `BURNWATCH_PORT` | `8787` | Self-hosted daemon only |
@@ -552,7 +554,7 @@ payload documented above.
 state without touching the database: `empty`, `speed_up`, `on_pace`,
 `runs_out`, `maxed`, `stale`, `hosts`. You cannot make a window expire, or run
 dry, or gather ten machines on demand, and two layout bugs shipped precisely
-because those states were never looked at. Combine with `&page=2&norotate=1` to
+because those states were never looked at. Combine with `&page=1&norotate=1` to
 pin one card.
 
 ## Roadmap

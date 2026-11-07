@@ -1,13 +1,10 @@
 # burnwatch on Wear OS
 
-A tile, two complication providers, and four pages you swipe through — so the
+A tile, a complication provider, and three pages you swipe through — so the
 burn is one glance away on the watch face you already wear.
 
 <p align="center">
-  <img src="../docs/wear-tile.png" width="190" alt="The tile: weekly arc filled to 53%, with 5h 9% underneath">
   <img src="../docs/wear-7d.png" width="190" alt="Weekly window: 42% used, resets in 2d 23h">
-  <img src="../docs/wear-5h.png" width="190" alt="Five-hour window: 9% used, resets in 3h 46m">
-  <img src="../docs/wear-pace.png" width="190" alt="Pace: SPEED UP on both windows">
   <img src="../docs/wear-hosts.png" width="190" alt="Clients: 2 chats active, four hosts listed">
 </p>
 
@@ -21,8 +18,8 @@ nothing depends on the phone being nearby.
 ## The tile, and why to prefer it
 
 The tile is the surface to reach for. It is one swipe from the watch face, it
-carries the weekly arc with both numbers, and tapping anywhere on it opens the
-pages above.
+carries the weekly arc with the percentage and when it resets — or how early it
+runs out — and tapping anywhere on it opens the pages above.
 
 It has to be added once by hand — swipe left to the end of the carousel, tap
 **+**, pick burnwatch — because Wear OS does not put newly installed tiles into
@@ -54,9 +51,9 @@ three missed updates, the same threshold the Worker uses before calling its own
 poll silent. burnwatch would rather show nothing than a number that may already
 be wrong, and this is that rule on a smaller screen.
 
-Tap the complication to open the app, whose four pages say which of those cases
-you are in: the five-hour window, the week, the verdict, and the machines that
-are reporting.
+Tap the complication to open the app, whose three pages say which of those
+cases you are in: the week, the verdict with the pace behind it, and the
+machines that are reporting.
 
 The pages are swiped **vertically**. On Wear a sideways swipe is the back
 gesture, so a horizontal pager would fight the system for the same movement and
@@ -115,7 +112,7 @@ It answers `result=1, data="Index=[0]"` — the position the tile landed at,
 counting swipes from the watch face — and `result=0` when it refused.
 
 If you want a complication too, long-press the watch face → **Customize** →
-tap a slot → pick **burnwatch weekly** or **burnwatch 5h**.
+tap a slot → pick **burnwatch weekly**.
 
 Two things about wireless debugging will cost you a session otherwise. **The
 port is not stable**: Wear OS turns wireless debugging off on its own to save

@@ -17,8 +17,8 @@ import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 
 /**
- * One provider per window, so both show up by name in the slot picker and you
- * can put the weekly budget in one ring and the five-hour one in another.
+ * One provider per window, each listed by name in the slot picker. Only the
+ * weekly one is left since Claude dropped the five-hour limit.
  *
  * Three types are offered because a slot advertises which ones it accepts, and
  * a provider that offers only the type a given slot does not take is simply
@@ -129,8 +129,4 @@ private const val TAG = "burnwatch"
 
 class WeeklyComplicationService : BurnwatchComplicationService() {
     override val key = WindowKey.SEVEN_DAY
-}
-
-class FiveHourComplicationService : BurnwatchComplicationService() {
-    override val key = WindowKey.FIVE_HOUR
 }

@@ -5,7 +5,25 @@ const H = 3600;
 const NOW = 1_755_072_000; // fixed instant; the math must never read the clock
 
 describe("parseIngest", () => {
-  test("accepts well-formed readings for both windows", () => {
+  test("accepts a well-formed weekly reading", () => {
+    const r = parseIngest(
+      {
+        rate_limits: {
+          seven_day: { used_percentage: 23, resets_at: NOW + 6 * 24 * H },
+        },
+      },
+      NOW,
+    );
+    expect(r.hadLimits).toBe(true);
+    expect(r.rejected).toBe(0);
+    expect(r.samples).toEqual([
+      { window: "seven_day", pct: 23, resets_at: NOW + 6 * 24 * H },
+    ]);
+  });
+
+  test("passes over a five_hour block without counting it rejected", () => {
+    // Claude dropped the five-hour limit. A collector on an older Claude Code
+    // may still forward one, and that is not a malformed payload.
     const r = parseIngest(
       {
         rate_limits: {
@@ -15,21 +33,15 @@ describe("parseIngest", () => {
       },
       NOW,
     );
-    expect(r.hadLimits).toBe(true);
     expect(r.rejected).toBe(0);
-    expect(r.samples).toHaveLength(2);
-    expect(r.samples[0]).toEqual({
-      window: "five_hour",
-      pct: 12.5,
-      resets_at: NOW + 4 * H,
-    });
+    expect(r.samples.map((s) => s.window)).toEqual(["seven_day"]);
   });
 
   test("rounds float-noise percentages before storing", () => {
     const r = parseIngest(
       {
         rate_limits: {
-          five_hour: { used_percentage: 7.000000000000001, resets_at: NOW + 4 * H },
+          seven_day: { used_percentage: 7.000000000000001, resets_at: NOW + 6 * 24 * H },
         },
       },
       NOW,
@@ -40,18 +52,19 @@ describe("parseIngest", () => {
   test("skips readings with wrong types without counting them rejected", () => {
     // Collectors forward whatever Claude Code handed it; an unusable block is
     // expected before the session's first API response.
-    const r = parseIngest(
-      {
-        rate_limits: {
-          five_hour: { used_percentage: "12", resets_at: NOW + 4 * H },
-          seven_day: { used_percentage: Number.NaN, resets_at: NOW + 4 * H },
+    for (const used_percentage of ["12", Number.NaN]) {
+      const r = parseIngest(
+        {
+          rate_limits: {
+            seven_day: { used_percentage, resets_at: NOW + 6 * 24 * H },
+          },
         },
-      },
-      NOW,
-    );
-    expect(r.samples).toHaveLength(0);
-    expect(r.rejected).toBe(0);
-    expect(r.hadLimits).toBe(true);
+        NOW,
+      );
+      expect(r.samples).toHaveLength(0);
+      expect(r.rejected).toBe(0);
+      expect(r.hadLimits).toBe(true);
+    }
   });
 
   test("rejects a reset dated years out, which would hide every real window", () => {
@@ -68,26 +81,27 @@ describe("parseIngest", () => {
   });
 
   test("rejects percentages outside 0-100", () => {
-    const r = parseIngest(
-      {
-        rate_limits: {
-          five_hour: { used_percentage: -5, resets_at: NOW + 4 * H },
-          seven_day: { used_percentage: 150, resets_at: NOW + 6 * 24 * H },
+    for (const used_percentage of [-5, 150]) {
+      const r = parseIngest(
+        {
+          rate_limits: {
+            seven_day: { used_percentage, resets_at: NOW + 6 * 24 * H },
+          },
         },
-      },
-      NOW,
-    );
-    expect(r.samples).toHaveLength(0);
-    expect(r.rejected).toBe(2);
+        NOW,
+      );
+      expect(r.samples).toHaveLength(0);
+      expect(r.rejected).toBe(1);
+    }
   });
 
   test("tolerates a day of clock skew on the reset date", () => {
     const r = parseIngest(
       {
         rate_limits: {
-          five_hour: {
+          seven_day: {
             used_percentage: 10,
-            resets_at: NOW + 5 * H + 86_400 - 60,
+            resets_at: NOW + 7 * 24 * H + 86_400 - 60,
           },
         },
       },
