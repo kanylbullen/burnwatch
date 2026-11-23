@@ -102,10 +102,22 @@ every pairing attempt, and H does the same with `(hsk, hpk)` and `nH`.
 
 1. **D → relay, commit.** `commit = SHA-256("burnwatch/v1 pair-commit" || dpk || nD)`.
    The relay opens a mailbox under the code and refuses a code it already has.
-2. **H → relay, hello.** `hpk`, `nH`. The relay accepts one hello per mailbox.
-3. **D → relay, reveal.** D waits for the hello, then posts `dpk`, `nD`.
+2. **H → relay, hello.** H first reads the mailbox and **pins `commit`**, and
+   only then posts `hpk`, `nH`. The relay accepts one hello per mailbox.
+3. **D → relay, reveal.** D reads the mailbox, **pins the hello** it finds
+   there, then posts `dpk`, `nD`.
 4. **H checks** that `SHA-256("burnwatch/v1 pair-commit" || dpk || nD)` equals
-   `commit`, and abandons the pairing if it does not.
+   the commit it pinned in step 2, not whatever the mailbox holds now, and
+   abandons the pairing if it does not.
+
+The pinning is the whole defence, so no step may skip it. A man in the middle
+learns D's number once D reveals. If H had sent its hello before fixing
+`commit`, the attacker could pick `commit`, `dpk` and `nD` for H afterwards and
+try candidates until H's number matched D's. That takes about a million
+candidates, a second's work. With `commit` fixed before `nH` exists, the
+attacker has to commit for H before it knows what H will send, and gets one
+guess. Likewise D's number depends only on the hello D pinned, so a hello
+swapped in later changes nothing D computes.
 
 Both sides then compute:
 
@@ -130,10 +142,18 @@ two groups of three digits (`048 213`).
    ```
 
 7. **D opens the seal** only after the user confirms on D. Then it stores `S`
-   and the relay URL, and deletes the mailbox.
+   and the relay URL, and deletes the mailbox. The relay URL must be an
+   `https:` URL with no credentials, query or fragment. Only `http://localhost`
+   and `http://127.0.0.1` are allowed in the clear, for development. D refuses
+   anything else.
 
 A mailbox lives ten minutes from step 1, and the relay drops it after that
 whatever state it is in.
+
+Network failures are retried. Writing a slot again with exactly the value it
+already holds succeeds, so a client whose reply was lost can repeat the
+request. A 409 always means *someone else* filled the slot, and the pairing is
+then abandoned. A 404 means the mailbox has expired or was cancelled.
 
 ## Relay API
 
@@ -148,10 +168,10 @@ The relay speaks JSON except for envelopes, which are
 | `GET /v1/channels/{channel_id}/state` | D, bearer `read_token` | | 200 envelope, 404 none yet |
 | `DELETE /v1/channels/{channel_id}` | H, bearer `W` | | 204 |
 | `POST /v1/pair/{code}` | D | `{"commit"}` | 201, 409 code in use |
-| `PUT /v1/pair/{code}/hello` | H | `{"hpk", "nonce"}` | 204, 409 already set |
-| `PUT /v1/pair/{code}/reveal` | D | `{"dpk", "nonce"}` | 204, 409 already set |
-| `PUT /v1/pair/{code}/seal` | H | envelope | 204, 409 already set |
-| `GET /v1/pair/{code}` | both | | 200 `{"commit", "hello"?, "reveal"?, "seal"?}` |
+| `PUT /v1/pair/{code}/hello` | H | `{"hpk", "nonce"}` | 204, 404, 409 already set |
+| `PUT /v1/pair/{code}/reveal` | D | `{"dpk", "nonce"}` | 204, 404, 409 already set |
+| `PUT /v1/pair/{code}/seal` | H | envelope | 204, 404, 409 already set |
+| `GET /v1/pair/{code}` | both | | 200 `{"commit", "hello"?, "reveal"?, "seal"?}`, 404 |
 | `DELETE /v1/pair/{code}` | both | | 204 |
 
 The hashes are base64url `SHA-256` of the raw token bytes. A wrong or missing

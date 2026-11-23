@@ -51,15 +51,26 @@ export const hkdf = (
 export const b64u = (b: Uint8Array): string =>
   Buffer.from(b).toString("base64url");
 
+/**
+ * Decodes base64url and refuses every input with a second spelling: wrong
+ * alphabet, a length no encoding produces, or spare bits that are not zero.
+ * The relay compares these as strings, so it must agree with this.
+ */
 export function unb64u(s: string): Uint8Array {
-  if (!/^[A-Za-z0-9_-]*$/.test(s)) throw new Error("not base64url");
-  return new Uint8Array(Buffer.from(s, "base64url"));
+  if (!/^[A-Za-z0-9_-]*$/.test(s) || s.length % 4 === 1) {
+    throw new Error("not base64url");
+  }
+  const out = new Uint8Array(Buffer.from(s, "base64url"));
+  if (b64u(out) !== s) throw new Error("not canonical base64url");
+  return out;
 }
 
 export const hex = (b: Uint8Array): string => Buffer.from(b).toString("hex");
 
-export const unhex = (s: string): Uint8Array =>
-  new Uint8Array(Buffer.from(s, "hex"));
+export function unhex(s: string): Uint8Array {
+  if (!/^(?:[0-9a-f]{2})*$/.test(s)) throw new Error("not lowercase hex");
+  return new Uint8Array(Buffer.from(s, "hex"));
+}
 
 // --- X25519 ---------------------------------------------------------------
 
@@ -91,11 +102,12 @@ export function x25519(sk: Uint8Array, peer: Uint8Array): Uint8Array {
   // error rather than a key, since the "shared" secret is then public. Some
   // runtimes (Bun, recent Node) already refuse it themselves with an error
   // of their own, so both paths end in the same message.
+  const priv = privateKey(sk);
   let shared: Uint8Array;
   try {
     shared = new Uint8Array(
       diffieHellman({
-        privateKey: privateKey(sk),
+        privateKey: priv,
         publicKey: createPublicKey({
           key: Buffer.from(concat(SPKI_X25519, peer)),
           format: "der",
@@ -226,8 +238,26 @@ export function normalizeCode(typed: string): string | null {
   return /^[0-9A-HJKMNP-TV-Z]{8}$/.test(s) ? s : null;
 }
 
-export const pairCommit = (dpk: Uint8Array, nD: Uint8Array) =>
-  sha256(label("burnwatch/v1 pair-commit"), dpk, nD);
+export function pairCommit(dpk: Uint8Array, nD: Uint8Array): Uint8Array {
+  // Without length framing, the hash is only unambiguous if both are fixed.
+  if (dpk.length !== 32 || nD.length !== 32) {
+    throw new Error("dpk and nD must be 32 bytes");
+  }
+  return sha256(label("burnwatch/v1 pair-commit"), dpk, nD);
+}
+
+/** The spec's rule for the relay URL inside a seal. */
+export function validRelayUrl(s: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(s);
+  } catch {
+    return false;
+  }
+  if (u.username || u.password || u.search || u.hash) return false;
+  if (u.protocol === "https:") return true;
+  return u.protocol === "http:" && ["localhost", "127.0.0.1"].includes(u.hostname);
+}
 
 export type Transcript = {
   code: string;
@@ -297,7 +327,9 @@ export function openPairing(
 ): { relay: string; secret: Uint8Array } {
   const body = JSON.parse(dec.decode(open(key, envelope, sealAad(transcript))));
   if (body?.v !== 1) throw new Error("unknown seal version");
-  if (typeof body.relay !== "string") throw new Error("missing relay");
+  if (typeof body.relay !== "string" || !validRelayUrl(body.relay)) {
+    throw new Error("relay must be an https URL");
+  }
   const secret = unb64u(String(body.secret));
   if (secret.length !== 32) throw new Error("secret must be 32 bytes");
   return { relay: body.relay, secret };

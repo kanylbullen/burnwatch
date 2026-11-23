@@ -139,5 +139,10 @@ export function buildVectors() {
 }
 
 if (import.meta.main) {
-  process.stdout.write(JSON.stringify(buildVectors(), null, 2) + "\n");
+  // Written to a temporary file and renamed, so a run that throws halfway
+  // leaves the committed vectors as they were instead of truncated.
+  const { renameSync, writeFileSync } = await import("node:fs");
+  const out = `${import.meta.dir}/../protocol/vectors.json`;
+  writeFileSync(`${out}.tmp`, JSON.stringify(buildVectors(), null, 2) + "\n");
+  renameSync(`${out}.tmp`, out);
 }

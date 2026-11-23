@@ -112,3 +112,32 @@ test("the seal is bound to its transcript", () => {
     p.openPairing(p.unhex(x.pair_key), p.unhex(x.seal), other),
   ).toThrow();
 });
+
+test("decoders refuse malformed and non-canonical input", () => {
+  expect(() => p.unb64u("A")).toThrow();
+  expect(() => p.unb64u("AB+/")).toThrow();
+  // 16 bytes in 22 characters leave 4 spare bits; "B" sets one of them.
+  expect(() => p.unb64u("A".repeat(21) + "B")).toThrow("canonical");
+  expect(p.unb64u("A".repeat(22)).length).toBe(16);
+  expect(() => p.unhex("abc")).toThrow();
+  expect(() => p.unhex("zz")).toThrow();
+});
+
+test("a bad secret key is reported as such, not as a low-order peer", () => {
+  expect(() =>
+    p.x25519(new Uint8Array(31), p.unhex(v.x25519.rfc7748.bob_pk)),
+  ).toThrow("secret key must be 32 bytes");
+});
+
+test("the commitment refuses inputs of the wrong length", () => {
+  expect(() => p.pairCommit(new Uint8Array(31), new Uint8Array(33))).toThrow();
+});
+
+test("only https relay URLs, or plain http to this machine, are accepted", () => {
+  for (const ok of ["https://relay.example", "https://relay.example/base/", "http://localhost:8787", "http://127.0.0.1:8787"]) {
+    expect(p.validRelayUrl(ok)).toBe(true);
+  }
+  for (const no of ["", "not a url", "http://relay.example", "https://u:p@relay.example", "https://relay.example/?x=1", "https://relay.example/#f", "file:///etc/passwd"]) {
+    expect(p.validRelayUrl(no)).toBe(false);
+  }
+});
