@@ -1,5 +1,6 @@
 node_modules/
 widget/src-tauri/target
+hub/target
 widget/src-tauri/gen/schemas/
 
 # Holds the daemon token.

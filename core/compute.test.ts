@@ -230,3 +230,12 @@ test("local midnight respects the configured zone, not the server's UTC clock", 
   expect(t - mid).toBe(10 * H);
   expect(t - localMidnight(t, "UTC")).toBe(8 * H);
 });
+
+test("core/fixtures/hub.json is what compute and ingest produce", async () => {
+  // If this fails after an intended change: bun run hub:fixtures
+  const { buildFixtures } = await import("./hub-fixtures");
+  const committed = JSON.parse(
+    await Bun.file(`${import.meta.dir}/fixtures/hub.json`).text(),
+  );
+  expect(JSON.parse(JSON.stringify(buildFixtures()))).toEqual(committed);
+});
