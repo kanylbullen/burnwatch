@@ -363,6 +363,10 @@ pub fn valid_relay_url(s: &str) -> bool {
     {
         return false;
     }
+    // No IPv6 literals, as the spec says: the Kotlin client refuses them.
+    if matches!(u.host(), Some(url::Host::Ipv6(_))) {
+        return false;
+    }
     match u.scheme() {
         "https" => u.host_str().is_some(),
         "http" => matches!(u.host_str(), Some("localhost") | Some("127.0.0.1")),

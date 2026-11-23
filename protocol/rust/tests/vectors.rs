@@ -189,6 +189,8 @@ fn relay_urls() {
         "https://relay.example/?x=1",
         "https://relay.example/#f",
         "file:///etc/passwd",
+        "https://[::1]",
+        "http://[::1]:8787",
     ] {
         assert!(!valid_relay_url(no), "{no}");
     }
