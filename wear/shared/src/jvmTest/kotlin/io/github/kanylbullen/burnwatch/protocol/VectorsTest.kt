@@ -152,8 +152,21 @@ class VectorsTest {
         for (ok in listOf("https://relay.example", "https://relay.example/base/", "http://localhost:8787", "http://127.0.0.1:8787")) {
             assertTrue(validRelayUrl(ok), ok)
         }
-        for (no in listOf("", "not a url", "http://relay.example", "https://u:p@relay.example", "https://relay.example/?x=1", "https://relay.example/#f", "file:///etc/passwd", "https://", "https://ex ample", "https://rélay.example")) {
+        for (no in listOf("", "not a url", "http://relay.example", "https://u:p@relay.example", "https://relay.example/?x=1", "https://relay.example/#f", "file:///etc/passwd", "https://", "https://ex ample", "https://rélay.example", "https://[]", "https://[::1]80", "https://[not-ipv6]", "https://relay.example:", "https://relay.example:99999")) {
             assertFalse(validRelayUrl(no), no)
         }
+    }
+
+    @Test
+    fun malformedPlaintextIsAProtocolError() {
+        val ch = Channel(v.o("channel").h("secret"))
+        val nonce = ByteArray(12)
+        val aad = "burnwatch/v1 state ".encodeToByteArray() + ch.channelId
+        val badUtf8 = seal(ch.stateKey, nonce, byteArrayOf(0xFF.toByte(), 0xFE.toByte()), aad)
+        assertFailsWith<ProtocolException> { ch.openState(badUtf8) }
+        for (body in listOf("""{"v":"1","issued_at":1,"state":{}}""", """{"v":1,"issued_at":"1","state":{}}""", "[]")) {
+            assertFailsWith<ProtocolException>(body) { ch.openState(ch.sealState(nonce, body)) }
+        }
+        assertFailsWith<ProtocolException> { open(ByteArray(16), ch.sealState(nonce, "{}"), aad) }
     }
 }

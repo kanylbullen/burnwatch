@@ -117,6 +117,8 @@ fun seal(key: ByteArray, nonce: ByteArray, plaintext: ByteArray, aad: ByteArray)
 }
 
 fun open(key: ByteArray, envelope: ByteArray, aad: ByteArray): ByteArray {
+    // JCA would quietly run AES-128 or AES-192 on a shorter key.
+    if (key.size != 32) fail("key must be 32 bytes")
     if (envelope.size < 1 + NONCE_LEN + TAG_LEN) fail("envelope too short")
     if (envelope[0] != VERSION) fail("unknown envelope version")
     val nonce = envelope.copyOfRange(1, 1 + NONCE_LEN)
@@ -149,15 +151,21 @@ class Channel(secret: ByteArray) {
      * cannot forge new ones.
      */
     fun openState(envelope: ByteArray, newestAccepted: Long = 0): StatePlaintext {
-        val text = open(stateKey, envelope, stateAad).decodeToString(throwOnInvalidSequence = true)
-        val body = runCatching { Json.parseToJsonElement(text).jsonObject }.getOrElse { fail("malformed state") }
-        if ((body["v"] as? JsonPrimitive)?.intOrNull != 1) fail("unknown state version")
-        val issued = (body["issued_at"] as? JsonPrimitive)?.longOrNull ?: fail("missing issued_at")
+        val pt = open(stateKey, envelope, stateAad)
+        val body = runCatching {
+            Json.parseToJsonElement(pt.decodeToString(throwOnInvalidSequence = true)).jsonObject
+        }.getOrElse { fail("malformed state") }
+        if (number(body["v"])?.intOrNull != 1) fail("unknown state version")
+        val issued = number(body["issued_at"])?.longOrNull ?: fail("missing issued_at")
         if (issued < newestAccepted) fail("state rolled back")
         val state = body["state"] as? JsonObject ?: fail("missing state")
         return StatePlaintext(issued, state.toString())
     }
 }
+
+/** A JSON number, never a string that happens to hold digits (as TS sees it). */
+private fun number(e: kotlinx.serialization.json.JsonElement?): JsonPrimitive? =
+    (e as? JsonPrimitive)?.takeIf { !it.isString && it !is kotlinx.serialization.json.JsonNull }
 
 /** A decrypted state: when the hub issued it, and the `/api/state`-shaped JSON. */
 data class StatePlaintext(val issuedAt: Long, val stateJson: String)
@@ -248,7 +256,7 @@ fun openPairing(key: ByteArray, envelope: ByteArray, transcript: ByteArray): Pai
     try {
         val body = runCatching { Json.parseToJsonElement(pt.decodeToString(throwOnInvalidSequence = true)).jsonObject }
             .getOrElse { fail("malformed seal") }
-        if ((body["v"] as? JsonPrimitive)?.intOrNull != 1) fail("unknown seal version")
+        if (number(body["v"])?.intOrNull != 1) fail("unknown seal version")
         val relay = (body["relay"] as? JsonPrimitive)?.takeIf { it.isString }?.content
         if (relay == null || !validRelayUrl(relay)) fail("relay must be an https URL")
         val secretText = (body["secret"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: fail("missing secret")
@@ -271,12 +279,15 @@ fun validRelayUrl(s: String): Boolean {
         s.startsWith("http://") -> "http" to s.removePrefix("http://")
         else -> return false
     }
-    if (rest.any { it == '?' || it == '#' || it == '@' || it == '\\' || it.isWhitespace() || it.code < 0x20 }) return false
+    // IP-literal hosts are refused outright: no relay needs one, and getting
+    // their syntax exactly right by hand is not worth the risk.
+    if (rest.any { it == '?' || it == '#' || it == '@' || it == '\\' || it == '[' || it == ']' || it.isWhitespace() || it.code < 0x20 }) return false
     val authority = rest.substringBefore('/')
-    val host = if (authority.startsWith("[")) authority.substringBefore(']') + "]" else authority.substringBefore(':')
+    val host = authority.substringBefore(':')
+    val hasPort = authority.length > host.length
     val port = authority.removePrefix(host).removePrefix(":")
     if (host.isEmpty()) return false
-    if (port.isNotEmpty() && (port.length > 5 || !port.all { it in '0'..'9' } || port.toInt() > 65535)) return false
-    if (!host.startsWith("[") && !host.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' || it == '.' }) return false
+    if (hasPort && (port.isEmpty() || port.length > 5 || !port.all { it in '0'..'9' } || port.toInt() > 65535)) return false
+    if (!host.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' || it == '.' }) return false
     return scheme == "https" || host == "localhost" || host == "127.0.0.1"
 }
