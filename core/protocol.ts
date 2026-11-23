@@ -255,6 +255,9 @@ export function validRelayUrl(s: string): boolean {
     return false;
   }
   if (u.username || u.password || u.search || u.hash) return false;
+  // No relay needs an IPv6 literal, and the Kotlin client, which has no URL
+  // parser to lean on, refuses them rather than validate their syntax by hand.
+  if (u.hostname.startsWith("[")) return false;
   if (u.protocol === "https:") return true;
   return u.protocol === "http:" && ["localhost", "127.0.0.1"].includes(u.hostname);
 }
