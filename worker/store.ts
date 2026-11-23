@@ -24,19 +24,35 @@ export type Activity = {
 export class Store {
   constructor(private db: D1Database) {}
 
-  /** Records contact from a collector, whether or not the reading changed. */
-  beatStatement(
+  /**
+   * Records contact from a collector, whether or not the reading changed.
+   *
+   * Two rows: the heartbeat, which is per session and counts towards "active
+   * sessions", and the host's last-seen time, which is what the widget's host
+   * list reads. The list used to be derived from the heartbeats with a GROUP
+   * BY over every session in the retention window, on every poll — see
+   * migrations/0002_hosts.sql for what that cost.
+   */
+  beatStatements(
     host: string,
     sessionId: string | null,
     ts: number,
     model: string | null,
-  ): D1PreparedStatement {
-    return this.db
-      .prepare(
-        `INSERT INTO heartbeats (host, session_id, ts, model) VALUES (?1, ?2, ?3, ?4)
-         ON CONFLICT (host, session_id) DO UPDATE SET ts = excluded.ts, model = excluded.model`,
-      )
-      .bind(host, sessionId ?? "", ts, model);
+  ): D1PreparedStatement[] {
+    return [
+      this.db
+        .prepare(
+          `INSERT INTO heartbeats (host, session_id, ts, model) VALUES (?1, ?2, ?3, ?4)
+           ON CONFLICT (host, session_id) DO UPDATE SET ts = excluded.ts, model = excluded.model`,
+        )
+        .bind(host, sessionId ?? "", ts, model),
+      this.db
+        .prepare(
+          `INSERT INTO hosts (host, ts) VALUES (?1, ?2)
+           ON CONFLICT (host) DO UPDATE SET ts = excluded.ts`,
+        )
+        .bind(host, ts),
+    ];
   }
 
   /**
@@ -84,22 +100,23 @@ export class Store {
   async activity(now: number, activeSessionS: number): Promise<Activity> {
     const since = now - activeSessionS;
 
-    const [sessions, hosts, last] = await this.db.batch([
+    const [sessions, hosts] = await this.db.batch([
+      // Bounded by the ts index: only the rows inside the active window.
       this.db
         .prepare(
           "SELECT COUNT(*) AS n FROM heartbeats WHERE ts >= ?1 AND session_id <> ''",
         )
         .bind(since),
       // Every host ever seen, newest first, each carrying its own age. Dropping
-      // the quiet ones would make an idle machine look like a broken one.
-      this.db.prepare(
-        "SELECT host, MAX(ts) AS ts FROM heartbeats WHERE host <> '' GROUP BY host ORDER BY ts DESC",
-      ),
-      this.db.prepare("SELECT MAX(ts) AS ts FROM heartbeats"),
+      // the quiet ones would make an idle machine look like a broken one. One
+      // row per machine, so this is a few rows however long the history is.
+      this.db.prepare("SELECT host, ts FROM hosts WHERE host <> '' ORDER BY ts DESC"),
     ]);
 
     const hostRows = (hosts.results ?? []) as { host: string; ts: number }[];
-    const lastTs = ((last.results ?? [])[0] as { ts: number | null })?.ts ?? null;
+    // Every heartbeat also touches its host, so the newest host is the newest
+    // contact of any kind.
+    const lastTs = hostRows.length ? hostRows[0].ts : null;
 
     const pollRow = hostRows.find((r) => r.host === POLL_HOST);
 
