@@ -50,7 +50,10 @@ impl Hub {
                 now,
                 s.window,
                 s.pct,
-                s.resets_at as i64,
+                // As given, like the daemon: the column has INTEGER affinity,
+                // so whole numbers are stored as integers and anything else
+                // as REAL, and nothing is truncated on the way in.
+                s.resets_at,
                 &who.host,
                 who.session_id.as_deref(),
                 who.model.as_deref(),
@@ -58,7 +61,9 @@ impl Hub {
                 recorded += 1;
             }
         }
-        store.prune(now)?;
+        // A failed prune must not fail an ingest whose reading has already
+        // been stored. It is retried on the next one.
+        let _ = store.prune(now);
 
         let mut reply = Map::new();
         reply.insert("ok".into(), json!(true));

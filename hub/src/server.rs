@@ -87,34 +87,71 @@ pub fn route(hub: &Hub, port: u16, req: &Incoming, now: i64) -> (u16, Value, boo
     }
 }
 
+/// How many requests are handled at once. Collectors post a few hundred
+/// bytes and are answered in microseconds, so this is not about throughput:
+/// tiny_http blocks while a body is read, and with one thread a single
+/// connection that sends headers and then stalls would stop every other
+/// collector. With several, a stall costs one worker until the client gives
+/// up.
+pub const WORKERS: usize = 4;
+
 /// Serves until the listener fails. `on_change` runs after every ingest that
 /// stored a reading, which is where the app repaints and publishes.
-pub fn serve(server: Server, hub: Arc<Hub>, port: u16, on_change: impl Fn() + Send + 'static) {
-    for mut req in server.incoming_requests() {
-        let mut body = Vec::new();
-        let too_big = req.body_length().is_some_and(|n| n as u64 > MAX_BODY)
-            || req
-                .as_reader()
-                .take(MAX_BODY + 1)
-                .read_to_end(&mut body)
-                .is_err()
-            || body.len() as u64 > MAX_BODY;
-        let (status, value, changed) = if too_big {
-            (413, json!({ "ok": false, "error": "too large" }), false)
-        } else {
-            let incoming = Incoming {
-                method: req.method(),
-                path: req.url(),
-                host: header(&req, "Host"),
-                origin: header(&req, "Origin"),
-                machine: header(&req, "X-Burnwatch-Host").unwrap_or(""),
-                body: &body,
-            };
-            route(&hub, port, &incoming, now())
+pub fn serve(
+    server: Server,
+    hub: Arc<Hub>,
+    port: u16,
+    on_change: impl Fn() + Send + Sync + 'static,
+) {
+    let server = Arc::new(server);
+    let on_change = Arc::new(on_change);
+    let workers: Vec<_> = (0..WORKERS)
+        .map(|_| {
+            let (server, hub, on_change) = (server.clone(), hub.clone(), on_change.clone());
+            std::thread::spawn(move || {
+                while let Ok(req) = server.recv() {
+                    handle(req, &hub, port, &*on_change);
+                }
+            })
+        })
+        .collect();
+    for w in workers {
+        let _ = w.join();
+    }
+}
+
+fn handle(mut req: Request, hub: &Hub, port: u16, on_change: &dyn Fn()) {
+    let mut body = Vec::new();
+    let (status, value, changed) = if req.body_length().is_some_and(|n| n as u64 > MAX_BODY) {
+        (413, json!({ "ok": false, "error": "too large" }), false)
+    } else if req
+        .as_reader()
+        .take(MAX_BODY + 1)
+        .read_to_end(&mut body)
+        .is_err()
+    {
+        // The client broke off or sent malformed chunks. Answer if the socket
+        // still takes it, but this is a bad request, not an oversized one.
+        (
+            400,
+            json!({ "ok": false, "error": "unreadable body" }),
+            false,
+        )
+    } else if body.len() as u64 > MAX_BODY {
+        (413, json!({ "ok": false, "error": "too large" }), false)
+    } else {
+        let incoming = Incoming {
+            method: req.method(),
+            path: req.url(),
+            host: header(&req, "Host"),
+            origin: header(&req, "Origin"),
+            machine: header(&req, "X-Burnwatch-Host").unwrap_or(""),
+            body: &body,
         };
-        let _ = req.respond(reply(status, value));
-        if changed {
-            on_change();
-        }
+        route(hub, port, &incoming, now())
+    };
+    let _ = req.respond(reply(status, value));
+    if changed {
+        on_change();
     }
 }

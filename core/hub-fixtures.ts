@@ -219,8 +219,13 @@ export function buildFixtures() {
 }
 
 if (import.meta.main) {
-  const { renameSync, writeFileSync } = await import("node:fs");
+  const { renameSync, rmSync, writeFileSync } = await import("node:fs");
   const out = `${import.meta.dir}/fixtures/hub.json`;
-  writeFileSync(`${out}.tmp`, JSON.stringify(buildFixtures()) + "\n");
-  renameSync(`${out}.tmp`, out);
+  const tmp = `${out}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(buildFixtures()) + "\n");
+    renameSync(tmp, out);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
 }

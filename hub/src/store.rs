@@ -35,8 +35,8 @@ impl Store {
 
     fn init(db: Connection) -> rusqlite::Result<Store> {
         db.execute_batch(
-            "PRAGMA journal_mode = WAL;
-             PRAGMA busy_timeout = 5000;
+            "PRAGMA busy_timeout = 5000;
+             PRAGMA journal_mode = WAL;
              CREATE TABLE IF NOT EXISTS samples (
                ts INTEGER NOT NULL, window TEXT NOT NULL, pct REAL NOT NULL,
                resets_at INTEGER NOT NULL, host TEXT NOT NULL DEFAULT '',
@@ -76,12 +76,12 @@ impl Store {
         ts: i64,
         window: &str,
         pct: f64,
-        resets_at: i64,
+        resets_at: f64,
         host: &str,
         session_id: Option<&str>,
         model: Option<&str>,
     ) -> rusqlite::Result<bool> {
-        let prev: Option<(f64, i64)> = self
+        let prev: Option<(f64, f64)> = self
             .db
             .query_row(
                 "SELECT pct, resets_at FROM samples WHERE window = ?1 ORDER BY ts DESC LIMIT 1",
@@ -122,7 +122,7 @@ impl Store {
             Ok(Sample {
                 ts: r.get::<_, i64>(0)? as f64,
                 pct: r.get(1)?,
-                resets_at: r.get::<_, i64>(2)? as f64,
+                resets_at: r.get(2)?,
             })
         })?;
         rows.collect()

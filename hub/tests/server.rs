@@ -161,9 +161,10 @@ fn the_listener_answers_over_a_real_socket() {
     let hub = Arc::new(hub());
     let (tx, rx) = std::sync::mpsc::channel();
     let h2 = hub.clone();
+    let tx = std::sync::Mutex::new(tx);
     std::thread::spawn(move || {
         burnwatch_hub::server::serve(server, h2, port, move || {
-            let _ = tx.send(());
+            let _ = tx.lock().unwrap().send(());
         })
     });
 
@@ -179,8 +180,44 @@ fn the_listener_answers_over_a_real_socket() {
 
     let big = "x".repeat(70 * 1024);
     let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
-    write!(s, "POST /ingest HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{big}", big.len()).unwrap();
+    // The server may answer 413 and close before the whole body is written,
+    // which some platforms report as a broken pipe on this side.
+    let _ = write!(s, "POST /ingest HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{big}", big.len());
     let mut out = String::new();
     let _ = s.read_to_string(&mut out);
     assert!(out.starts_with("HTTP/1.1 413"), "{out}");
+}
+
+#[test]
+fn a_stalled_connection_does_not_block_other_collectors() {
+    use std::io::{Read, Write};
+    use std::sync::Arc;
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let port = server.server_addr().to_ip().unwrap().port();
+    let hub = Arc::new(hub());
+    std::thread::spawn(move || burnwatch_hub::server::serve(server, hub, port, || {}));
+
+    // Headers promising a body that never comes. Over 1 KiB on purpose:
+    // tiny_http reads smaller bodies ahead on the connection's own thread, so
+    // a short stall never reaches a worker and the test would prove nothing.
+    let mut stalled = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    write!(
+        stalled,
+        "POST /ingest HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: 5000\r\n\r\n"
+    )
+    .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    s.set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .unwrap();
+    write!(
+        s,
+        "GET /healthz HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+    )
+    .unwrap();
+    let mut out = String::new();
+    s.read_to_string(&mut out).unwrap();
+    assert!(out.starts_with("HTTP/1.1 200"), "{out}");
+    drop(stalled);
 }
