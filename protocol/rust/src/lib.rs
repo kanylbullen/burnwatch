@@ -208,8 +208,13 @@ pub fn code_from_bytes(bits: &[u8; 5]) -> String {
         .collect()
 }
 
-pub fn format_code(code: &str) -> String {
-    format!("{}-{}", &code[..4], &code[4..])
+/// `ZJ3A85E6` as `ZJ3A-85E6`. Refuses anything that is not a normalised code
+/// rather than slicing it, since a byte index into arbitrary UTF-8 panics.
+pub fn format_code(code: &str) -> Result<String> {
+    if normalize_code(code).as_deref() != Some(code) {
+        return Err(Error::Code);
+    }
+    Ok(format!("{}-{}", &code[..4], &code[4..]))
 }
 
 /// What a typed code becomes before it is used anywhere, or `None`.
@@ -265,8 +270,10 @@ pub fn sas(transcript: &[u8; 32]) -> String {
     format!("{n:06}")
 }
 
-pub fn format_sas(sas: &str) -> String {
-    format!("{} {}", &sas[..3], &sas[3..])
+/// `789330` as `789 330`, or `None` for anything but six ASCII digits.
+pub fn format_sas(sas: &str) -> Option<String> {
+    (sas.len() == 6 && sas.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| format!("{} {}", &sas[..3], &sas[3..]))
 }
 
 pub fn pair_key(
@@ -290,7 +297,7 @@ fn seal_aad(transcript: &[u8; 32]) -> Vec<u8> {
 struct SealPlaintext {
     v: u32,
     relay: String,
-    secret: String,
+    secret: Zeroizing<String>,
 }
 
 pub fn seal_pairing(
@@ -304,7 +311,7 @@ pub fn seal_pairing(
         serde_json::to_vec(&SealPlaintext {
             v: 1,
             relay: relay.to_owned(),
-            secret: b64u(secret),
+            secret: Zeroizing::new(b64u(secret)),
         })
         .expect("a fixed struct always serialises"),
     );
@@ -335,7 +342,8 @@ pub fn open_pairing(key: &[u8; 32], envelope: &[u8], transcript: &[u8; 32]) -> R
     if !valid_relay_url(&body.relay) {
         return Err(Error::RelayUrl);
     }
-    let secret = Zeroizing::new(array::<32>(&unb64u(&body.secret)?)?);
+    let raw = Zeroizing::new(unb64u(&body.secret)?);
+    let secret = Zeroizing::new(array::<32>(&raw)?);
     Ok(Paired {
         relay: body.relay,
         secret,

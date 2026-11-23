@@ -90,7 +90,10 @@ fn codes() {
     let c = &v["code"];
     let bytes: [u8; 5] = h(&c["bytes"]).try_into().unwrap();
     assert_eq!(code_from_bytes(&bytes), c["code"]);
-    assert_eq!(format_code(c["code"].as_str().unwrap()), c["display"]);
+    assert_eq!(
+        format_code(c["code"].as_str().unwrap()).unwrap(),
+        c["display"]
+    );
     for case in c["normalize"].as_array().unwrap() {
         let got = normalize_code(case[0].as_str().unwrap());
         assert_eq!(got.as_deref(), case[1].as_str(), "{case}");
@@ -126,7 +129,7 @@ fn pairing() {
     .unwrap();
     assert_eq!(hex(&t), p["transcript"]);
     assert_eq!(sas(&t), p["sas"]);
-    assert_eq!(format_sas(&sas(&t)), p["sas_display"]);
+    assert_eq!(format_sas(&sas(&t)).unwrap(), p["sas_display"]);
 
     let k_h = pair_key(&hsk, &dpk, &t).unwrap();
     let k_d = pair_key(&dsk, &hpk, &t).unwrap();
@@ -188,5 +191,15 @@ fn relay_urls() {
         "file:///etc/passwd",
     ] {
         assert!(!valid_relay_url(no), "{no}");
+    }
+}
+
+#[test]
+fn formatting_refuses_what_it_cannot_slice() {
+    for bad in ["", "ABC", "äbcdefgh", "zj3a85e6", "ZJ3A85E6X"] {
+        assert!(format_code(bad).is_err(), "{bad}");
+    }
+    for bad in ["", "12", "1ä2345", "12345a", "1234567"] {
+        assert!(format_sas(bad).is_none(), "{bad}");
     }
 }
