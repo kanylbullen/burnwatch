@@ -137,7 +137,7 @@ test("only https relay URLs, or plain http to this machine, are accepted", () =>
   for (const ok of ["https://relay.example", "https://relay.example/base/", "http://localhost:8787", "http://127.0.0.1:8787"]) {
     expect(p.validRelayUrl(ok)).toBe(true);
   }
-  for (const no of ["", "not a url", "http://relay.example", "https://u:p@relay.example", "https://relay.example/?x=1", "https://relay.example/#f", "file:///etc/passwd"]) {
+  for (const no of ["", "not a url", "http://relay.example", "https://u:p@relay.example", "https://relay.example/?x=1", "https://relay.example/#f", "file:///etc/passwd", "https://[::1]", "http://[::1]:8787"]) {
     expect(p.validRelayUrl(no)).toBe(false);
   }
 });
