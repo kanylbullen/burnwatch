@@ -29,6 +29,26 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+  protocol-rust:
+    name: Protocol crate against the vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: protocol/rust
+      - name: Format
+        run: cargo fmt --check --manifest-path protocol/rust/Cargo.toml
+      - name: Clippy
+        run: cargo clippy --all-targets --manifest-path protocol/rust/Cargo.toml -- -D warnings
+      # Reads protocol/vectors.json, which the TypeScript reference writes and
+      # the core job checks is current, so the two cannot drift silently.
+      - name: Test
+        run: cargo test --manifest-path protocol/rust/Cargo.toml
+
   collector:
     name: Collector scripts
     runs-on: ubuntu-latest
