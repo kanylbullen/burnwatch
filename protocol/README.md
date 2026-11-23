@@ -149,7 +149,8 @@ two groups of three digits (`048 213`).
 
 7. **D opens the seal** only after the user confirms on D. Then it stores `S`
    and the relay URL, and deletes the mailbox. The relay URL must be an
-   `https:` URL with no credentials, query or fragment. Only `http://localhost`
+   `https:` URL with no credentials, query, fragment or IPv6
+   literal host. Only `http://localhost`
    and `http://127.0.0.1` are allowed in the clear, for development. D refuses
    anything else.
 
