@@ -152,8 +152,9 @@ whatever state it is in.
 
 Network failures are retried. Writing a slot again with exactly the value it
 already holds succeeds, so a client whose reply was lost can repeat the
-request. A 409 always means *someone else* filled the slot, and the pairing is
-then abandoned. A 404 means the mailbox has expired or was cancelled.
+request. A 409 on a slot means either that *someone else* filled it, and the
+pairing is then abandoned, or that the slot before it is not filled yet
+(`"hello not set yet"`), and the client waits and tries again. A 404 means the mailbox has expired or was cancelled.
 
 ## Relay API
 

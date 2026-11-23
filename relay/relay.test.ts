@@ -299,3 +299,15 @@ test("the rate limiters are consulted", async () => {
   env.RELAY_LIMIT = { limit: async () => ({ success: false }) };
   expect((await call("GET", `/v1/pair/${p.codeFromBytes(rand(5))}`)).status).toBe(429);
 });
+
+test("a reveal for an expired mailbox does not land in the one reopened under its code", async () => {
+  const code = p.codeFromBytes(rand(5));
+  const dpk = p.publicKeyOf(rand(32));
+  const nD = rand(32);
+  await call("POST", `/v1/pair/${code}`, { commit: p.b64u(p.pairCommit(dpk, nD)) });
+  at(MAILBOX_TTL_S + 1);
+  await call("POST", `/v1/pair/${code}`, { commit: p.b64u(rand(32)) });
+  await call("PUT", `/v1/pair/${code}/hello`, { hpk: p.b64u(rand(32)), nonce: p.b64u(rand(32)) });
+  const stale = await call("PUT", `/v1/pair/${code}/reveal`, { dpk: p.b64u(dpk), nonce: p.b64u(nD) });
+  expect(stale.status).toBe(400);
+});

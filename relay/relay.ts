@@ -8,7 +8,7 @@
 
 export type Env = {
   DB: D1Database;
-  /** Per-address ceiling on every request. */
+  /** Per-address ceiling on every /v1 request. */
   RELAY_LIMIT?: RateLimit;
   /** Stricter per-address ceiling on creating channels and mailboxes. */
   CREATE_LIMIT?: RateLimit;
@@ -59,7 +59,7 @@ function b64uEncode(b: Uint8Array): string {
 }
 
 /**
- * A base64url value of exactly `bytes` bytes, in canonical form. Comparing
+ * A base64url value of the length `re` allows, in canonical form. Comparing
  * hashes and keys as strings is only sound if each value has one spelling:
  * base64url leaves spare bits in the last character, so the value is decoded
  * and encoded again and must come back unchanged.
@@ -139,11 +139,14 @@ async function createChannel(req: Request, env: Env, id: string): Promise<Respon
   if (!body || !canonical(body.read_hash, B64U_32) || !canonical(body.write_hash, B64U_32)) {
     return bad("expected read_hash and write_hash");
   }
-  const t = now();
-  // An expired row is taken over rather than refused. Otherwise a hub that was
-  // switched off for a fortnight could never recreate its own channel, since
-  // the id is derived from a secret it still holds.
-  const res = await env.DB.prepare(
+  // A row that expires or is deleted between the insert and the check below
+  // would read as someone else's, so the pair runs twice before saying 409.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const t = now();
+    // An expired row is taken over rather than refused. Otherwise a hub that
+    // was switched off for a fortnight could never recreate its own channel,
+    // since the id is derived from a secret it still holds.
+    const res = await env.DB.prepare(
     `INSERT INTO channels (id, read_hash, write_hash, touched, state)
      VALUES (?1, ?2, ?3, ?4, NULL)
      ON CONFLICT (id) DO UPDATE SET
@@ -151,19 +154,22 @@ async function createChannel(req: Request, env: Env, id: string): Promise<Respon
        touched = excluded.touched, state = NULL
      WHERE channels.touched <= ?5`,
   )
-    .bind(id, body.read_hash, body.write_hash, t, t - CHANNEL_TTL_S)
-    .run();
-  if (res.meta.changes) return reply(201);
-  // A hub whose reply was lost retries with the same hashes, and that must
-  // not look like someone else holding the id.
-  const row = await env.DB.prepare(
-    `SELECT read_hash, write_hash FROM channels WHERE id = ?1`,
-  )
-    .bind(id)
-    .first<{ read_hash: string; write_hash: string }>();
-  return row?.read_hash === body.read_hash && row.write_hash === body.write_hash
-    ? reply(201)
-    : reply(409, { error: "exists" });
+      .bind(id, body.read_hash, body.write_hash, t, t - CHANNEL_TTL_S)
+      .run();
+    if (res.meta.changes) return reply(201);
+    // A hub whose reply was lost retries with the same hashes, and that must
+    // not look like someone else holding the id.
+    const row = await env.DB.prepare(
+      `SELECT read_hash, write_hash FROM channels WHERE id = ?1 AND touched > ?2`,
+    )
+      .bind(id, now() - CHANNEL_TTL_S)
+      .first<{ read_hash: string; write_hash: string }>();
+    if (!row) continue;
+    return row.read_hash === body.read_hash && row.write_hash === body.write_hash
+      ? reply(201)
+      : reply(409, { error: "exists" });
+  }
+  return reply(409, { error: "exists" });
 }
 
 async function writeState(req: Request, env: Env, id: string): Promise<Response> {
@@ -228,21 +234,26 @@ async function openMailbox(req: Request, env: Env, code: string): Promise<Respon
   const body = await readJson(req);
   if (body === "too large") return tooLarge();
   if (!body || !canonical(body.commit, B64U_32)) return bad("expected commit");
-  const t = now();
-  // Like a channel, an expired mailbox under the same code is reused rather
-  // than blocking the code until the nightly sweep.
-  const res = await env.DB.prepare(
-    `INSERT INTO mailboxes (code, created, commit_) VALUES (?1, ?2, ?3)
-     ON CONFLICT (code) DO UPDATE SET
-       created = excluded.created, commit_ = excluded.commit_,
-       hello = NULL, reveal = NULL, seal = NULL
-     WHERE mailboxes.created <= ?4`,
-  )
-    .bind(code, t, body.commit, t - MAILBOX_TTL_S)
-    .run();
-  if (res.meta.changes) return reply(201);
-  const row = await liveMailbox(env, code);
-  return row?.commit_ === body.commit ? reply(201) : reply(409, { error: "code in use" });
+  // Twice for the same reason as createChannel.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const t = now();
+    // Like a channel, an expired mailbox under the same code is reused rather
+    // than blocking the code until the nightly sweep.
+    const res = await env.DB.prepare(
+      `INSERT INTO mailboxes (code, created, commit_) VALUES (?1, ?2, ?3)
+       ON CONFLICT (code) DO UPDATE SET
+         created = excluded.created, commit_ = excluded.commit_,
+         hello = NULL, reveal = NULL, seal = NULL
+       WHERE mailboxes.created <= ?4`,
+    )
+      .bind(code, t, body.commit, t - MAILBOX_TTL_S)
+      .run();
+    if (res.meta.changes) return reply(201);
+    const row = await liveMailbox(env, code);
+    if (!row) continue;
+    return row.commit_ === body.commit ? reply(201) : reply(409, { error: "code in use" });
+  }
+  return reply(409, { error: "code in use" });
 }
 
 async function liveMailbox(env: Env, code: string): Promise<MailboxRow | null> {
@@ -265,21 +276,28 @@ async function fillSlot(
   slot: "hello" | "reveal" | "seal",
   value: string,
   requires?: "hello" | "reveal",
+  commit?: string,
 ): Promise<Response> {
+  // `commit` is checked inside the same statement, so a mailbox that expires
+  // and is reopened under the same code between a check and this write
+  // cannot receive a reveal meant for the old one.
   const res = await env.DB.prepare(
     `UPDATE mailboxes SET ${slot} = ?1
      WHERE code = ?2 AND created > ?3 AND ${slot} IS NULL
-     ${requires ? `AND ${requires} IS NOT NULL` : ""}`,
+     ${requires ? `AND ${requires} IS NOT NULL` : ""}
+     ${commit ? `AND commit_ = ?4` : ""}`,
   )
-    .bind(value, code, now() - MAILBOX_TTL_S)
+    .bind(value, code, now() - MAILBOX_TTL_S, ...(commit ? [commit] : []))
     .run();
   if (res.meta.changes) return reply(204);
   const row = await liveMailbox(env, code);
   if (!row) return notFound();
+  if (commit && row.commit_ !== commit) return bad("reveal does not match commit");
   // The same value again is a retry after a lost reply, not a conflict.
   if (row[slot] === value) return reply(204);
   if (row[slot] !== null) return conflict();
-  return reply(409, { error: `${requires} not set yet` });
+  if (requires) return reply(409, { error: `${requires} not set yet` });
+  return conflict();
 }
 
 async function putHello(req: Request, env: Env, code: string): Promise<Response> {
@@ -300,18 +318,16 @@ async function putReveal(req: Request, env: Env, code: string): Promise<Response
   // The relay can check the commitment as cheaply as the hub can, and doing it
   // here means a stranger who guessed the code cannot occupy the reveal slot
   // with a key that was never committed to.
-  const row = await liveMailbox(env, code);
-  if (!row) return notFound();
   const commit = await sha256b64u(
     concat(label("burnwatch/v1 pair-commit"), b64uDecode(body.dpk), b64uDecode(body.nonce)),
   );
-  if (commit !== row.commit_) return bad("reveal does not match commit");
   return fillSlot(
     env,
     code,
     "reveal",
     JSON.stringify({ dpk: body.dpk, nonce: body.nonce }),
     "hello",
+    commit,
   );
 }
 

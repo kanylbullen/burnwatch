@@ -16,9 +16,12 @@ class Stmt {
   bind(...args: unknown[]) {
     return new Stmt(this.db, this.sql, args);
   }
-  async run() {
+  runSync() {
     const r = this.db.query(this.sql).run(...(this.args as never[]));
     return { success: true, meta: { changes: r.changes } };
+  }
+  async run() {
+    return this.runSync();
   }
   async first<T>() {
     return (this.db.query(this.sql).get(...(this.args as never[])) ?? null) as T | null;
@@ -33,18 +36,9 @@ export function memoryD1(migration: string): D1Database {
   db.exec(readFileSync(migration, "utf8"));
   const shim = {
     prepare: (sql: string) => new Stmt(db, sql),
-    batch: async (stmts: Stmt[]) => {
-      const out = [];
-      db.exec("BEGIN");
-      try {
-        for (const s of stmts) out.push(await s.run());
-        db.exec("COMMIT");
-      } catch (e) {
-        db.exec("ROLLBACK");
-        throw e;
-      }
-      return out;
-    },
+    // Synchronous on purpose: an await between BEGIN and COMMIT would let a
+    // second batch start a transaction inside this one.
+    batch: async (stmts: Stmt[]) => db.transaction(() => stmts.map((s) => s.runSync()))(),
   };
   return shim as unknown as D1Database;
 }
