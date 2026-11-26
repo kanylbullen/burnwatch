@@ -17,6 +17,7 @@ tested against them:
 |---|---|---|
 | TypeScript | [`core/protocol.ts`](../core/protocol.ts) | reference, relay tests |
 | Kotlin Multiplatform | [`wear/shared`](../wear/shared) | Wear OS, later Android phone and Apple |
+| Rust | [`protocol/rust`](rust) | the desktop hub |
 
 ## Primitives
 
@@ -159,8 +160,9 @@ whatever state it is in.
 
 Network failures are retried. Writing a slot again with exactly the value it
 already holds succeeds, so a client whose reply was lost can repeat the
-request. A 409 always means *someone else* filled the slot, and the pairing is
-then abandoned. A 404 means the mailbox has expired or was cancelled.
+request. A 409 on a slot means either that *someone else* filled it, and the
+pairing is then abandoned, or that the slot before it is not filled yet
+(`"hello not set yet"`), and the client waits and tries again. A 404 means the mailbox has expired or was cancelled.
 
 ## Relay API
 
@@ -178,13 +180,17 @@ The relay speaks JSON except for envelopes, which are
 | `PUT /v1/pair/{code}/hello` | H | `{"hpk", "nonce"}` | 204, 404, 409 already set |
 | `PUT /v1/pair/{code}/reveal` | D | `{"dpk", "nonce"}` | 204, 404, 409 already set |
 | `PUT /v1/pair/{code}/seal` | H | envelope | 204, 404, 409 already set |
-| `GET /v1/pair/{code}` | both | | 200 `{"commit", "hello"?, "reveal"?, "seal"?}`, 404 |
+| `GET /v1/pair/{code}` | both | | 200 `{"commit", "hello"?, "reveal"?, "seal"?}` with the seal as base64url, 404 |
 | `DELETE /v1/pair/{code}` | both | | 204 |
 
-The hashes are base64url `SHA-256` of the raw token bytes. A wrong or missing
+The hashes are base64url `SHA-256` of the raw token bytes. Every base64url
+value must be canonical (the spare bits in its last character are zero), and
+the relay refuses one that is not. Slots fill in order (hello, then reveal,
+then seal), and the relay refuses a reveal that does not match the commitment. A wrong or missing
 bearer gets 404, the same reply as a channel that does not exist, so the relay
 does not confirm which channels exist. The limits (envelope size, request rate,
-how long an idle channel lives) belong to the relay and are documented there.
+how long an idle channel lives) belong to the relay and are documented in
+[`relay/README.md`](../relay/README.md).
 A client treats 413 and 429 as "try later", never as data.
 
 Every mailbox slot is write-once. Overwriting `hello` or `reveal` would let a

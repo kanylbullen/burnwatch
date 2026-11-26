@@ -1,0 +1,40 @@
+// The relay is its own Worker with its own database, apart from the
+// self-hosted burnwatch Worker: one holds a single user's readings in the
+// clear, the other holds everybody's ciphertext, and they should not share a
+// blast radius. Copy to relay/wrangler.jsonc and fill in the database id.
+//
+//   npx wrangler d1 create burnwatch-relay
+//   npx wrangler d1 migrations apply burnwatch-relay --remote -c relay/wrangler.jsonc
+//   npx wrangler deploy -c relay/wrangler.jsonc
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "burnwatch-relay",
+  "main": "./index.ts",
+  "compatibility_date": "2026-08-01",
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "burnwatch-relay",
+      "database_id": "<from wrangler d1 create>",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Nightly sweep of expired channels and mailboxes. Reads already ignore
+  // expired rows, so this only frees storage.
+  "triggers": { "crons": ["41 3 * * *"] },
+
+  // Keyed by source address. A hub publishes at most once a minute and a
+  // pairing device polls every couple of seconds for ten minutes, so 120 a
+  // minute is far above honest use. Creating channels and mailboxes is rarer
+  // still, and is what an abuser would loop on.
+  "unsafe": {
+    "bindings": [
+      { "name": "RELAY_LIMIT", "type": "ratelimit", "namespace_id": "2001", "simple": { "limit": 120, "period": 60 } },
+      { "name": "CREATE_LIMIT", "type": "ratelimit", "namespace_id": "2002", "simple": { "limit": 10, "period": 60 } }
+    ]
+  },
+
+  "observability": { "enabled": true }
+}
