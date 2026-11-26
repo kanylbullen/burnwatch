@@ -10,7 +10,13 @@ to anything below is a change to the vectors, and a client that disagrees with
 them is wrong even if it can talk to itself.
 
 The reference implementation is [`core/protocol.ts`](../core/protocol.ts), and
-`bun run protocol:vectors` regenerates the vectors from it.
+`bun run protocol:vectors` regenerates the vectors from it. Implementations
+tested against them:
+
+| Language | Where | Used by |
+|---|---|---|
+| TypeScript | [`core/protocol.ts`](../core/protocol.ts) | reference, relay tests |
+| Rust | [`protocol/rust`](rust) | the desktop hub |
 
 ## Primitives
 
