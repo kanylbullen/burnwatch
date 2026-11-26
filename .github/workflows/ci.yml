@@ -29,6 +29,25 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+  kotlin-shared:
+    name: Kotlin shared module against the vectors
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: wear
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      # The JVM tests read protocol/vectors.json; the Android build proves the
+      # same sources compile against tink-android for the watch. The runner
+      # image ships an Android SDK, so neither needs one installed here.
+      - name: Test and build
+        run: ./gradlew :shared:jvmTest :shared:assembleRelease --console=plain
+
   protocol-rust:
     name: Protocol crate against the vectors
     runs-on: ubuntu-latest

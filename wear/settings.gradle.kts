@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 rootProject.name = "burnwatch-wear"
 
 include(":complication")
+include(":shared")

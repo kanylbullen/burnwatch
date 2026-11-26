@@ -16,6 +16,7 @@ tested against them:
 | Language | Where | Used by |
 |---|---|---|
 | TypeScript | [`core/protocol.ts`](../core/protocol.ts) | reference, relay tests |
+| Kotlin Multiplatform | [`wear/shared`](../wear/shared) | Wear OS, later Android phone and Apple |
 | Rust | [`protocol/rust`](rust) | the desktop hub |
 
 ## Primitives
