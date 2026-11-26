@@ -68,6 +68,31 @@ jobs:
       - name: Test
         run: cargo test --manifest-path protocol/rust/Cargo.toml
 
+  hub:
+    name: Desktop hub engine (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: hub
+      - name: Format
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo fmt --check --manifest-path hub/Cargo.toml
+      - name: Clippy
+        run: cargo clippy --all-targets --manifest-path hub/Cargo.toml -- -D warnings
+      # Replays core/fixtures/hub.json, which the core job checks is current,
+      # so the Rust forecast cannot drift from the TypeScript one.
+      - name: Test
+        run: cargo test --manifest-path hub/Cargo.toml
+
   collector:
     name: Collector scripts
     runs-on: ubuntu-latest
