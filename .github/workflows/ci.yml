@@ -29,6 +29,45 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+  kotlin-shared:
+    name: Kotlin shared module against the vectors
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: wear
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      # The JVM tests read protocol/vectors.json; the Android build proves the
+      # same sources compile against tink-android for the watch. The runner
+      # image ships an Android SDK, so neither needs one installed here.
+      - name: Test and build
+        run: ./gradlew :shared:jvmTest :shared:assembleRelease --console=plain
+
+  protocol-rust:
+    name: Protocol crate against the vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: protocol/rust
+      - name: Format
+        run: cargo fmt --check --manifest-path protocol/rust/Cargo.toml
+      - name: Clippy
+        run: cargo clippy --all-targets --manifest-path protocol/rust/Cargo.toml -- -D warnings
+      # Reads protocol/vectors.json, which the TypeScript reference writes and
+      # the core job checks is current, so the two cannot drift silently.
+      - name: Test
+        run: cargo test --manifest-path protocol/rust/Cargo.toml
+
   hub:
     name: Desktop hub engine (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

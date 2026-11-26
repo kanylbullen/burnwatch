@@ -31,6 +31,7 @@
     "selfhost": "bun run daemon/server.ts",
     "typecheck": "tsc --noEmit",
     "hub:fixtures": "bun run core/hub-fixtures.ts",
+    "protocol:vectors": "bun run core/protocol-vectors.ts",
     "test": "bun test"
   },
   "devDependencies": {
