@@ -522,6 +522,11 @@ applyAppearance({
   opacity: params.has("opacity") ? Number(params.get("opacity")) : undefined,
 });
 globalThis.__TAURI__?.event?.listen?.("appearance", (e) => applyAppearance(e.payload));
+// In hub mode the hub says when something changed, instead of the page polling
+// to find out. The poll stays as the fallback.
+globalThis.__TAURI__?.event?.listen?.("state", (e) => {
+  if (injected?.hub && !document.hidden) paint(e.payload);
+});
 const base = injected?.url?.replace(/\/+$/, "") ?? "";
 // The shell hands its token over directly; the browser has to be weaned off
 // carrying it in the URL.
@@ -545,6 +550,20 @@ async function tick() {
     const build = FIXTURES[fixture];
     errorEl.hidden = true;
     paint({ ok: true, now: Math.floor(Date.now() / 1000), tz: "Europe/Stockholm", ...build(Math.floor(Date.now() / 1000)) });
+    return;
+  }
+
+  if (injected?.hub || injected?.hubError) {
+    // The hub runs in this app: ask it directly, there is no server to reach.
+    try {
+      if (injected.hubError) throw new Error(injected.hubError);
+      paint(await globalThis.__TAURI__.core.invoke("hub_state"));
+      errorEl.hidden = true;
+    } catch (err) {
+      errorEl.hidden = false;
+      errorEl.textContent = `HUB — ${String(err?.message ?? err)}`;
+      document.body.dataset.stale = "1";
+    }
     return;
   }
 

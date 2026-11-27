@@ -3,14 +3,17 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
+
+use burnwatch_hub::{server, state::Hub, store::Store};
 
 use serde::{Deserialize, Serialize};
 use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl,
-    WebviewWindowBuilder, WindowEvent,
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder,
+    WindowEvent,
 };
 
 const WINDOW_LABEL: &str = "widget";
@@ -124,11 +127,98 @@ mod tests {
     }
 
     #[test]
+    fn the_tray_follows_the_state_without_the_page() {
+        let state = serde_json::json!({ "windows": { "seven_day": { "pct": 41.6, "resets_in_s": 90000 } } });
+        let (pct, tip) = super::tray_for(&state);
+        assert_eq!(pct, Some(41.6));
+        assert_eq!(tip, "7d 42%  ·  resets in 1D 1H");
+        let empty = serde_json::json!({ "windows": { "seven_day": null } });
+        assert_eq!(
+            super::tray_for(&empty),
+            (None, "7d —  ·  no current reading".into())
+        );
+    }
+
+    #[test]
+    fn durations_read_in_the_largest_sensible_unit() {
+        assert_eq!(super::duration(59.0 * 60.0), "59M");
+        assert_eq!(super::duration(3.0 * 3600.0 + 120.0), "3H 2M");
+        assert_eq!(super::duration(3.0 * 86400.0), "3D");
+    }
+
+    #[test]
     fn the_centre_stays_transparent() {
         let (buf, size) = meter_rgba(Some(100.0));
         let mid = ((size as usize / 2) * size as usize + size as usize / 2) * 4;
         assert_eq!(buf[mid + 3], 0);
     }
+}
+
+/// What the page reads when the hub runs inside the app. The same object
+/// `/api/state` serves, with no HTTP and no token in between.
+#[tauri::command]
+fn hub_state(hub: tauri::State<'_, Option<Arc<Hub>>>) -> Result<serde_json::Value, String> {
+    let hub = hub.as_ref().ok_or("the hub is not running")?;
+    hub.state(server::now()).map_err(|e| e.to_string())
+}
+
+/// The ring and tooltip for one state, the way the page draws them.
+///
+/// Done here and not in the page, because a hidden webview is throttled and
+/// the hub has to keep the tray right while the window is away.
+fn tray_for(state: &serde_json::Value) -> (Option<f64>, String) {
+    let week = state["windows"]["seven_day"].as_object();
+    let pct = week.and_then(|w| w.get("pct")).and_then(|v| v.as_f64());
+    let tip = match (
+        pct,
+        week.and_then(|w| w.get("resets_in_s"))
+            .and_then(|v| v.as_f64()),
+    ) {
+        (Some(p), Some(r)) => format!("7d {}%  ·  resets in {}", p.round(), duration(r)),
+        _ => "7d —  ·  no current reading".into(),
+    };
+    (pct, tip)
+}
+
+/// The page's `dur()`, so the tooltip reads the same whichever side drew it.
+fn duration(secs: f64) -> String {
+    let s = secs.round().max(0.0) as i64;
+    let (d, h, m) = (s / 86400, s % 86400 / 3600, s % 3600 / 60);
+    match (d, h, m) {
+        (d, 0, _) if d > 0 => format!("{d}D"),
+        (d, h, _) if d > 0 => format!("{d}D {h}H"),
+        (_, h, 0) if h > 0 => format!("{h}H"),
+        (_, h, m) if h > 0 => format!("{h}H {m}M"),
+        (_, _, m) => format!("{m}M"),
+    }
+}
+
+/// Starts the loopback listener and returns the hub. `None` and a reason when
+/// it cannot, so the page can say why rather than show an empty widget.
+fn start_hub(app: &AppHandle, tz: &str) -> Result<Arc<Hub>, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let store = Store::open(&dir.join("burnwatch.db")).map_err(|e| e.to_string())?;
+    let hub = Arc::new(Hub::new(store, tz));
+    // Fixed port: the collector scripts already post to 8787. If something else
+    // owns it (the Bun daemon, a second copy), that is an error to show, not
+    // something to paper over with another port the collector does not know.
+    let http = tiny_http::Server::http("127.0.0.1:8787")
+        .map_err(|e| format!("cannot listen on 127.0.0.1:8787: {e}"))?;
+    let (h, handle) = (hub.clone(), app.clone());
+    std::thread::spawn(move || {
+        server::serve(http, h.clone(), 8787, move || {
+            let Ok(state) = h.state(server::now()) else {
+                return;
+            };
+            let (pct, tip) = tray_for(&state);
+            if let Some(tray) = handle.tray_by_id(TRAY_ID) {
+                let _ = tray.set_icon(Some(meter_icon(pct)));
+                let _ = tray.set_tooltip(Some(&tip));
+            }
+            let _ = handle.emit("state", state);
+        })
+    });
+    Ok(hub)
 }
 
 /// Pushed from the page after each successful reading.
@@ -156,6 +246,11 @@ struct Settings {
     theme: String,
     /// Background opacity in percent. 100 is solid, 0 leaves only the text.
     opacity: u8,
+    /// Run the hub inside the app instead of reading a daemon over HTTP.
+    /// `BURNWATCH_HUB=1` turns it on for one run.
+    hub: bool,
+    /// IANA zone the forecast's "today" is cut in. `BURNWATCH_TZ` overrides.
+    tz: String,
     /// Discreet mode: nothing on screen until you ask for it.
     ///
     /// The tray ring already carries the number worth glancing at, so the
@@ -186,6 +281,8 @@ impl Default for Settings {
             theme: "dark".into(),
             opacity: 100,
             discreet: false,
+            hub: false,
+            tz: "Europe/Stockholm".into(),
         }
     }
 }
@@ -216,6 +313,14 @@ impl Settings {
         if let Ok(token) = std::env::var("BURNWATCH_TOKEN") {
             if !token.is_empty() {
                 s.token = token;
+            }
+        }
+        if std::env::var("BURNWATCH_HUB").is_ok_and(|v| v == "1") {
+            s.hub = true;
+        }
+        if let Ok(tz) = std::env::var("BURNWATCH_TZ") {
+            if !tz.trim().is_empty() {
+                s.tz = tz.trim().to_string();
             }
         }
         s
@@ -249,6 +354,16 @@ impl Settings {
         out.theme = self.theme.clone();
         out.opacity = self.opacity;
         out.discreet = self.discreet;
+        // What the file said, not what the environment turned on for this run.
+        out.hub = fs::read_to_string(path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<Settings>(&raw).ok())
+            .is_some_and(|s| s.hub);
+        out.tz = fs::read_to_string(path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<Settings>(&raw).ok())
+            .map(|s| s.tz)
+            .unwrap_or_else(|| Settings::default().tz);
 
         if let Ok(text) = serde_json::to_string_pretty(&out) {
             if fs::write(path, text).is_ok() {
@@ -308,7 +423,7 @@ fn config_path(app: &tauri::AppHandle) -> PathBuf {
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![set_tray])
+        .invoke_handler(tauri::generate_handler![set_tray, hub_state])
         .setup(|app| {
             // `skip_taskbar` is a no-op on macOS, where the equivalent is the
             // activation policy: without this the widget takes a Dock slot and
@@ -320,6 +435,19 @@ fn main() {
             let cfg_path = config_path(app.handle());
             let settings = Settings::load(&cfg_path);
 
+            // A hub that cannot start is reported to the page, not swallowed:
+            // an empty widget with no reason is the failure to avoid.
+            let (hub, hub_error) = if settings.hub {
+                match start_hub(app.handle(), &settings.tz) {
+                    Ok(h) => (Some(h), None),
+                    Err(e) => (None, Some(e)),
+                }
+            } else {
+                (None, None)
+            };
+            let hub_on = hub.is_some();
+            app.manage(hub);
+
             // Injected before any page script, so app.js finds its endpoint on
             // first paint rather than racing an eval() sent after load.
             let boot = format!(
@@ -329,26 +457,27 @@ fn main() {
                     "token": settings.token,
                     "theme": settings.theme,
                     "opacity": settings.opacity,
+                    "hub": hub_on,
+                    "hubError": hub_error,
                 })
             );
 
-            let window =
-                WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::default())
-                    .title("burnwatch")
-                    .min_inner_size(180.0, 180.0)
-                    .resizable(true)
-                    .decorations(false)
-                    // Always transparent at the window level; how much shows
-                    // through is the page's business, set by the opacity menu.
-                    // Doing it the other way — rebuilding the window on each
-                    // change — would lose position, focus and the webview.
-                    .transparent(true)
-                    .always_on_top(settings.always_on_top)
-                    .skip_taskbar(true)
-                    .shadow(false)
-                    .visible(false)
-                    .initialization_script(&boot)
-                    .build()?;
+            let window = WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::default())
+                .title("burnwatch")
+                .min_inner_size(180.0, 180.0)
+                .resizable(true)
+                .decorations(false)
+                // Always transparent at the window level; how much shows
+                // through is the page's business, set by the opacity menu.
+                // Doing it the other way — rebuilding the window on each
+                // change — would lose position, focus and the webview.
+                .transparent(true)
+                .always_on_top(settings.always_on_top)
+                .skip_taskbar(true)
+                .shadow(false)
+                .visible(false)
+                .initialization_script(&boot)
+                .build()?;
 
             // Geometry is applied in physical pixels because that is how it was
             // measured on the way out. The builder's inner_size/position take
@@ -382,10 +511,20 @@ fn main() {
             )?;
 
             let dark = CheckMenuItem::with_id(
-                app, "theme:dark", "Dark", true, settings.theme == "dark", None::<&str>,
+                app,
+                "theme:dark",
+                "Dark",
+                true,
+                settings.theme == "dark",
+                None::<&str>,
             )?;
             let light = CheckMenuItem::with_id(
-                app, "theme:light", "Light", true, settings.theme == "light", None::<&str>,
+                app,
+                "theme:light",
+                "Light",
+                true,
+                settings.theme == "light",
+                None::<&str>,
             )?;
             let theme_menu = Submenu::with_items(app, "Theme", true, &[&dark, &light])?;
 
@@ -394,7 +533,11 @@ fn main() {
                 steps.push(CheckMenuItem::with_id(
                     app,
                     format!("opacity:{step}"),
-                    if step == 100 { "Solid".into() } else { format!("{step}%") },
+                    if step == 100 {
+                        "Solid".into()
+                    } else {
+                        format!("{step}%")
+                    },
                     true,
                     settings.opacity == step,
                     None::<&str>,
@@ -413,10 +556,8 @@ fn main() {
                 None::<&str>,
             )?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(
-                app,
-                &[&pin, &discreet, &theme_menu, &opacity_menu, &quit],
-            )?;
+            let menu =
+                Menu::with_items(app, &[&pin, &discreet, &theme_menu, &opacity_menu, &quit])?;
 
             // The check marks are driven from the saved settings rather than
             // toggled in place, so the menu can never drift out of step with
@@ -449,7 +590,11 @@ fn main() {
                 // no click events at all, so the menu stays the only way in.
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
-                    let TrayIconEvent::Click { button, button_state, .. } = event
+                    let TrayIconEvent::Click {
+                        button,
+                        button_state,
+                        ..
+                    } = event
                     else {
                         return;
                     };
