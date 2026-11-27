@@ -193,8 +193,19 @@ fn duration(secs: f64) -> String {
     }
 }
 
-/// Starts the loopback listener and returns the hub. `None` and a reason when
-/// it cannot, so the page can say why rather than show an empty widget.
+/// Puts the hub's current state on the tray and returns it.
+fn paint_tray(app: &AppHandle, hub: &Hub) -> Option<serde_json::Value> {
+    let state = hub.state(server::now()).ok()?;
+    let (pct, tip) = tray_for(&state);
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let _ = tray.set_icon(Some(meter_icon(pct)));
+        let _ = tray.set_tooltip(Some(&tip));
+    }
+    Some(state)
+}
+
+/// Starts the loopback listener and returns the hub, or `Err` with the reason
+/// when it cannot, so the page can say why rather than show an empty widget.
 fn start_hub(app: &AppHandle, tz: &str) -> Result<Arc<Hub>, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let store = Store::open(&dir.join("burnwatch.db")).map_err(|e| e.to_string())?;
@@ -205,17 +216,15 @@ fn start_hub(app: &AppHandle, tz: &str) -> Result<Arc<Hub>, String> {
     let http = tiny_http::Server::http("127.0.0.1:8787")
         .map_err(|e| format!("cannot listen on 127.0.0.1:8787: {e}"))?;
     let (h, handle) = (hub.clone(), app.clone());
+    // Workers run concurrently, so two readings can finish together. Without
+    // this the earlier one could be the last to paint the tray.
+    let order = std::sync::Mutex::new(());
     std::thread::spawn(move || {
         server::serve(http, h.clone(), 8787, move || {
-            let Ok(state) = h.state(server::now()) else {
-                return;
-            };
-            let (pct, tip) = tray_for(&state);
-            if let Some(tray) = handle.tray_by_id(TRAY_ID) {
-                let _ = tray.set_icon(Some(meter_icon(pct)));
-                let _ = tray.set_tooltip(Some(&tip));
+            let _turn = order.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(state) = paint_tray(&handle, &h) {
+                let _ = handle.emit("state", state);
             }
-            let _ = handle.emit("state", state);
         })
     });
     Ok(hub)
@@ -322,6 +331,11 @@ impl Settings {
             if !tz.trim().is_empty() {
                 s.tz = tz.trim().to_string();
             }
+        }
+        // The page formats times in this zone and throws on one it does not
+        // know, so a typo must not get that far.
+        if !burnwatch_hub::compute::valid_zone(&s.tz) {
+            s.tz = Settings::default().tz;
         }
         s
     }
@@ -652,6 +666,12 @@ fn main() {
                     let _ = app.emit("appearance", s.appearance());
                 })
                 .build(app)?;
+
+            // A hidden window does not poll, so without this a tray that
+            // starts hidden would show "waiting" until the next reading.
+            if let Some(h) = app.state::<Option<Arc<Hub>>>().as_ref() {
+                paint_tray(app.handle(), h);
+            }
 
             Ok(())
         })

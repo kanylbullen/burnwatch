@@ -250,3 +250,10 @@ pub fn compute_window(all: &[Sample], o: &Opts) -> Option<WindowState> {
         last_change_s: (now - latest.ts).max(0.0),
     })
 }
+
+/// Whether `name` is an IANA zone the forecast can cut a day in. Anything
+/// else is silently read as UTC by [`local_midnight`], so callers that take a
+/// zone from a user should check it first.
+pub fn valid_zone(name: &str) -> bool {
+    name.parse::<chrono_tz::Tz>().is_ok()
+}

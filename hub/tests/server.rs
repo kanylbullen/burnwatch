@@ -221,3 +221,10 @@ fn a_stalled_connection_does_not_block_other_collectors() {
     assert!(out.starts_with("HTTP/1.1 200"), "{out}");
     drop(stalled);
 }
+
+#[test]
+fn only_real_zones_are_valid() {
+    use burnwatch_hub::compute::valid_zone;
+    assert!(valid_zone("Europe/Stockholm") && valid_zone("UTC"));
+    assert!(!valid_zone("") && !valid_zone("-05:00") && !valid_zone("Invalid/Zone"));
+}

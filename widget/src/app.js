@@ -525,7 +525,10 @@ globalThis.__TAURI__?.event?.listen?.("appearance", (e) => applyAppearance(e.pay
 // In hub mode the hub says when something changed, instead of the page polling
 // to find out. The poll stays as the fallback.
 globalThis.__TAURI__?.event?.listen?.("state", (e) => {
-  if (injected?.hub && !document.hidden) paint(e.payload);
+  if (injected?.hub && !document.hidden) {
+    paint(e.payload);
+    errorEl.hidden = true;
+  }
 });
 const base = injected?.url?.replace(/\/+$/, "") ?? "";
 // The shell hands its token over directly; the browser has to be weaned off

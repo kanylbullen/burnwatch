@@ -297,9 +297,9 @@ environment variables, or with a `config.json` in the app config directory:
 }
 ```
 
-Environment wins over the file. Note that the app rewrites that file whenever
-you move or resize the window, and writes the token into it in plain text — so
-supplying the token by environment does not keep it out of the config directory.
+Environment wins over the file. The app rewrites that file whenever you move or
+resize the window. It keeps a token there only if the file already had one, so
+supplying the token by environment keeps it out of the config directory.
 
 Click to page, drag to move, scroll or arrow keys to navigate. The tray icon
 carries the weekly ring and a tooltip with the percentage and the reset;
